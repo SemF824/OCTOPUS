@@ -1,7 +1,19 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import uuid
+import os
+from sqlalchemy import create_backend, create_engine
+from sqlalchemy.orm import sessionmaker
 
+# Railway injecte automatiquement l'URL de la base dans cette variable
+DATABASE_URL = os.getenv("DATABASE_URL") 
+
+# Correction pour SQLAlchemy (Postgresql:// au lieu de Postgres://)
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # ==========================================
 # 1. INITIALISATION DE L'API
 # ==========================================
