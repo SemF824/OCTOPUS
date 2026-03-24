@@ -3,14 +3,13 @@ NEXUS-PRIME v3 — IA Décisionnelle BioNexus
 ===========================================
 Architecture :
   - Source unique : nexus_bionexus.db  (créée par migration_vers_sql.py)
-  - Zéro CSV en production
   - Tout ce que l'IA prédit est automatiquement loggé en SQL (prediction_logs)
   - Le VETO éthique est une règle déterministe, jamais statistique
   - Les modèles .pkl sont sauvegardés sur disque pour réutilisation
 
 ORDRE DE LANCEMENT :
-  1. python migration_vers_sql.py   ← une seule fois
-  2. python Nexus-Prime-v3.py       ← entraînement + tests
+  1. python data_factory_v3.py      ← Génération de la vérité terrain anti-triche
+  2. python nexus_prime.py          ← Entraînement strict + tests
 """
 
 import sqlite3
@@ -31,10 +30,10 @@ warnings.filterwarnings("ignore")
 #  CONFIGURATION CENTRALE
 # ─────────────────────────────────────────────────────────────
 
-DB_PATH          = "nexus_bionexus.db"
+DB_PATH = "nexus_bionexus.db"
 MODEL_VECTORIZER = "nexus_vectorizer_v3.pkl"
-MODEL_DOMAINE    = "nexus_modele_domaine_v3.pkl"
-MODEL_SCORE      = "nexus_modele_score_v3.pkl"
+MODEL_DOMAINE = "nexus_modele_domaine_v3.pkl"
+MODEL_SCORE = "nexus_modele_score_v3.pkl"
 
 MOTS_CLES_VETO = [
     "respire plus", "ne respire", "arrêt respiratoire", "arrêt cardiaque",
@@ -70,14 +69,16 @@ def charger_donnees() -> pd.DataFrame:
     if df.empty:
         raise ValueError(
             "❌ La table 'tickets' est vide. "
-            "Lancez d'abord : python migration_vers_sql.py"
+            "Lancez d'abord : python data_factory_v3.py"
         )
 
     # Texte fusionné : titre + détails (les NaN sont déjà '' grâce à la migration)
     df["texte"] = (df["titre_ticket"] + " " + df["details_ticket"]).str.strip()
 
     # Encodage numérique de l'état
-    df["etat_num"]  = df["etat_declare"].map({"URGENT": 1, "NORMAL": 0}).fillna(0).astype(int)
+    df["etat_num"] = df["etat_declare"].map({"URGENT": 1, "NORMAL": 0}).fillna(0).astype(int)
+
+    # On garde le veto_flag uniquement pour les statistiques, IL N'EST PLUS UTILISÉ POUR L'ENTRAÎNEMENT
     df["veto_flag"] = df["ethique_veto"].str.contains("OUI", na=False).astype(int)
 
     print(f"✅ {len(df)} tickets chargés depuis '{DB_PATH}'")
@@ -93,15 +94,17 @@ def charger_donnees() -> pd.DataFrame:
 def entrainer_modeles(df: pd.DataFrame):
     """Vectorise le texte SQL, entraîne les deux cerveaux, évalue, sauvegarde."""
 
-    X_texte     = df["texte"]
-    X_num       = df[["rang_priorite", "etat_num", "veto_flag"]].values
-    Y_domaine   = df["domaine_cible"]
-    Y_score     = df["score_cible"]
+    X_texte = df["texte"]
+    # CORRECTION CRITIQUE : Le modèle de score ne s'entraîne plus sur la réponse du veto.
+    # Il doit deviner le score uniquement avec le rang et l'état.
+    X_num = df[["rang_priorite", "etat_num"]].values
+    Y_domaine = df["domaine_cible"]
+    Y_score = df["score_cible"]
 
     # Split stratifié : même proportion de domaines en train et test
     (X_txt_train, X_txt_test,
      y_dom_train, y_dom_test,
-     y_sc_train,  y_sc_test,
+     y_sc_train, y_sc_test,
      X_num_train, X_num_test) = train_test_split(
         X_texte, Y_domaine, Y_score, X_num,
         test_size=0.2, random_state=42, stratify=Y_domaine
@@ -113,15 +116,15 @@ def entrainer_modeles(df: pd.DataFrame):
         analyzer="word",
         ngram_range=(1, 2),
         max_features=3000,
-        sublinear_tf=True,   # atténue les mots ultra-fréquents
-        min_df=2,            # ignore les mots vus < 2 fois
+        sublinear_tf=True,  # atténue les mots ultra-fréquents
+        min_df=2,  # ignore les mots vus < 2 fois
     )
     X_txt_train_vec = vectorizer.fit_transform(X_txt_train)
-    X_txt_test_vec  = vectorizer.transform(X_txt_test)
+    X_txt_test_vec = vectorizer.transform(X_txt_test)
 
-    # Matrice étendue pour le modèle de score
+    # Matrice étendue pour le modèle de score (Texte + Rang + État)
     X_full_train = hstack([X_txt_train_vec, csr_matrix(X_num_train)])
-    X_full_test  = hstack([X_txt_test_vec,  csr_matrix(X_num_test)])
+    X_full_test = hstack([X_txt_test_vec, csr_matrix(X_num_test)])
     print("✅ Vectorisation terminée.")
 
     # ── Cerveau 1 : Classification du Domaine ─────────────────
@@ -149,7 +152,7 @@ def entrainer_modeles(df: pd.DataFrame):
     precision = np.mean(preds_dom == y_dom_test) * 100
     cv = cross_val_score(ia_domaine, X_txt_train_vec, y_dom_train, cv=5, scoring="accuracy")
     print(f"\n🎯 [DOMAINE] Précision test : {precision:.1f}%")
-    print(f"   CV-5 train           : {cv.mean()*100:.1f}% ± {cv.std()*100:.1f}%")
+    print(f"   CV-5 train           : {cv.mean() * 100:.1f}% ± {cv.std() * 100:.1f}%")
     if precision - cv.mean() * 100 > 10:
         print("   ⚠️  Écart > 10% — risque d'overfitting")
     print(classification_report(y_dom_test, preds_dom, zero_division=0))
@@ -161,7 +164,7 @@ def entrainer_modeles(df: pd.DataFrame):
     # ── Sauvegarde des modèles ────────────────────────────────
     joblib.dump(vectorizer, MODEL_VECTORIZER)
     joblib.dump(ia_domaine, MODEL_DOMAINE)
-    joblib.dump(ia_score,   MODEL_SCORE)
+    joblib.dump(ia_score, MODEL_SCORE)
     print(f"\n💾 Modèles sauvegardés : {MODEL_VECTORIZER}, {MODEL_DOMAINE}, {MODEL_SCORE}")
 
     return vectorizer, ia_domaine, ia_score
@@ -179,9 +182,9 @@ def appliquer_veto(texte: str, domaine: str, score_brut: float, rang: int) -> di
       - Sinon : légère modulation par le rang (+/- 0.2 par niveau)
     """
     texte_lower = texte.lower()
-    veto_mots   = any(mot in texte_lower for mot in MOTS_CLES_VETO)
-    veto_score  = score_brut >= 9.0 and domaine == "MÉDICAL"
-    veto        = veto_mots or veto_score
+    veto_mots = any(mot in texte_lower for mot in MOTS_CLES_VETO)
+    veto_score = score_brut >= 9.0 and domaine == "MÉDICAL"
+    veto = veto_mots or veto_score
 
     raison = ""
     if veto_mots:
@@ -201,26 +204,28 @@ def appliquer_veto(texte: str, domaine: str, score_brut: float, rang: int) -> di
 # ─────────────────────────────────────────────────────────────
 
 def analyser_ticket(
-    texte: str,
-    rang: int,
-    etat: str,
-    vectorizer,
-    ia_domaine,
-    ia_score,
-    id_client: str = None,
+        texte: str,
+        rang: int,
+        etat: str,
+        vectorizer,
+        ia_domaine,
+        ia_score,
+        id_client: str = None,
 ) -> dict:
     """
     Pipeline complet :
       texte SQL → vectorisation → prédiction → veto → log SQL → retour résultat
     """
-    etat_num    = 1 if etat == "URGENT" else 0
-    vec_txt     = vectorizer.transform([texte])
-    vec_full    = hstack([vec_txt, csr_matrix([[rang, etat_num, 0]])])
+    etat_num = 1 if etat == "URGENT" else 0
+    vec_txt = vectorizer.transform([texte])
 
-    domaine     = ia_domaine.predict(vec_txt)[0]
-    score_brut  = round(float(ia_score.predict(vec_full)[0]), 2)
-    probas      = dict(zip(ia_domaine.classes_,
-                          (ia_domaine.predict_proba(vec_txt)[0] * 100).round(1)))
+    # CORRECTION CRITIQUE : Alignement exact sur la matrice d'entraînement (2 variables)
+    vec_full = hstack([vec_txt, csr_matrix([[rang, etat_num]])])
+
+    domaine = ia_domaine.predict(vec_txt)[0]
+    score_brut = round(float(ia_score.predict(vec_full)[0]), 2)
+    probas = dict(zip(ia_domaine.classes_,
+                      (ia_domaine.predict_proba(vec_txt)[0] * 100).round(1)))
 
     veto_result = appliquer_veto(texte, domaine, score_brut, rang)
 
@@ -243,12 +248,12 @@ def analyser_ticket(
     conn.close()
 
     return {
-        "domaine":     domaine,
-        "score_brut":  score_brut,
+        "domaine": domaine,
+        "score_brut": score_brut,
         "score_final": veto_result["score_final"],
-        "veto":        veto_result["veto"],
+        "veto": veto_result["veto"],
         "raison_veto": veto_result["raison"],
-        "confiance":   probas,
+        "confiance": probas,
     }
 
 
@@ -299,24 +304,24 @@ if __name__ == "__main__":
 
     cas_tests = [
         {
-            "texte":     "douleur poitrin. un visiteur ne respire plus batiment a",
-            "rang":      5, "etat": "URGENT", "id_client": "CLI-VIP-01",
-            "label":     "Urgence vitale (orthographe approximative)"
+            "texte": "douleur poitrin. un visiteur ne respire plus batiment a",
+            "rang": 5, "etat": "URGENT", "id_client": "CLI-VIP-01",
+            "label": "Urgence vitale (orthographe approximative)"
         },
         {
-            "texte":     "mon clavier a un problème avec la touche espace",
-            "rang":      5, "etat": "URGENT", "id_client": "CLI-100",
-            "label":     "VIP qui abuse du flag URGENT (matériel banal)"
+            "texte": "mon clavier a un problème avec la touche espace",
+            "rang": 5, "etat": "URGENT", "id_client": "CLI-100",
+            "label": "VIP qui abuse du flag URGENT (matériel banal)"
         },
         {
-            "texte":     "besoin d'un accès VPN pour travailler depuis chez moi",
-            "rang":      1, "etat": "NORMAL", "id_client": "CLI-101",
-            "label":     "Ticket INFRA standard"
+            "texte": "besoin d'un accès VPN pour travailler depuis chez moi",
+            "rang": 1, "etat": "NORMAL", "id_client": "CLI-101",
+            "label": "Ticket INFRA standard"
         },
         {
-            "texte":     "Collègue inconscient dans la salle de réunion B2",
-            "rang":      2, "etat": "NORMAL", "id_client": "CLI-102",
-            "label":     "Urgence vitale déclarée NORMAL par un employé standard"
+            "texte": "Collègue inconscient dans la salle de réunion B2",
+            "rang": 2, "etat": "NORMAL", "id_client": "CLI-102",
+            "label": "Urgence vitale déclarée NORMAL par un employé standard"
         },
     ]
 
