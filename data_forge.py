@@ -21,7 +21,7 @@ def generer_usine_monde_reel():
         (["cœur", "poitrine", "respire plus", "malaise", "sang", "inconscient"], "MÉDICAL", 10.0, "OUI (Veto)"),
 
         # --- LE CONCEPT DE LA FRACTURE ---
-        (["cassé", "fracture", "os", "entorse", "entorse grave", "déchirure", "luxation"], "MÉDICAL", 7.5, "NON"),
+        (["cassé", "cassée", "fracture", "os", "entorse", "entorse grave", "déchirure", "luxation"], "MÉDICAL", 7.5, "NON"),
 
         # INFRA (4000)
         (["câble", "wifi", "lenteur réseau", "latence", "débranché", "internet"], "INFRA", 3.0, "NON"),
