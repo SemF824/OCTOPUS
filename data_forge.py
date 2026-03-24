@@ -5,81 +5,68 @@ import random
 DB_PATH = "nexus_bionexus.db"
 
 
-def generer_usine_massive():
-    print(">>> DÉMARRAGE DE LA DATA FACTORY V2 (COMBINATOIRE)...")
+def generer_usine_monde_reel():
+    print(">>> DÉMARRAGE DE LA DATA FACTORY V4 (SIMULATEUR MONDE RÉEL)...")
     donnees = []
+    titres = ["Ticket", "Demande", "Incident", "Problème", "Assistance", "Urgence", "Besoin"]
 
-    # --- DICTIONNAIRES DE MOTS ---
+    # Le "bruit" simule le langage humain pour habituer le vectorizer (TF-IDF baissera leur poids)
+    bruit = ["", "bonjour", "svp", "il y a un", "mon", "le", "la", "avec", "pour", "je n'arrive pas à",
+             "problème avec la touche"]
 
-    # 1. MÉDICAL
-    med_bobo_sujets = ["jambe", "jambes", "bras", "doigt", "tête", "ventre", "pied", "dos"]
-    med_bobo_verbes = ["j'ai mal au", "j'ai mal aux", "douleur légère", "je me suis coupé le", "ampoule au", "petit problème au"]
+    # Vérité métier absolue (Liste de mots -> Domaine, Score Réel de base, Veto)
+    concepts = [
+        # MÉDICAL (4000)
+        (["jambe", "bras", "doigt", "tête", "ventre", "coupure", "douleur"], "MÉDICAL", 2.0, "NON"),
+        (["cœur", "poitrine", "respire plus", "malaise", "sang", "inconscient"], "MÉDICAL", 10.0, "OUI (Veto)"),
 
-    med_grave_sujets = ["cœur", "poitrine", "collègue", "visiteur", "sang", "respiration"]
-    med_grave_verbes = ["ne respire plus", "malaise", "crise cardiaque", "hémorragie", "inconscient", "arrêt"]
+        # --- LE CONCEPT DE LA FRACTURE ---
+        (["cassé", "fracture", "os", "entorse", "entorse grave", "déchirure", "luxation"], "MÉDICAL", 7.5, "NON"),
 
-    # 2. INFRA
-    infra_mineur_mots = ["câble", "wifi", "lenteur réseau", "latence", "débranché", "internet lent"]
-    infra_grave_mots = ["datacenter", "feu", "ransomware", "cyberattaque", "piratage", "serveurs down", "intrusion"]
+        # INFRA (4000)
+        (["câble", "wifi", "lenteur réseau", "latence", "débranché", "internet"], "INFRA", 3.0, "NON"),
+        (["datacenter", "feu", "ransomware", "cyberattaque", "serveurs down"], "INFRA", 10.0, "OUI (Veto)"),
 
-    # 3. MATÉRIEL
-    mat_mots = ["clavier", "souris", "écran", "ordinateur", "laptop", "imprimante", "toner", "chargeur", "casque"]
-    mat_verbes = ["cassé", "ne marche plus", "hs", "bloqué", "plus de batterie", "bouton cassé"]
+        # MATÉRIEL (4000)
+        (["clavier", "souris", "écran", "ordinateur", "imprimante", "casque", "espace"], "MATÉRIEL", 2.5, "NON"),
+        (["batterie gonflée", "étincelles ordinateur", "fumée écran"], "MATÉRIEL", 8.0, "NON"),
 
-    # 4. RH
-    rh_mots = ["salaire", "paie", "congés", "fiche", "contrat", "manager", "harcèlement", "absence", "mutuelle"]
+        # RH (4000)
+        (["salaire", "paie", "congés", "fiche", "contrat", "absence", "mutuelle"], "RH", 4.0, "NON"),
+        (["harcèlement", "burnout", "conflit grave", "inspection du travail"], "RH", 9.0, "NON"),
 
-    # 5. ACCÈS
-    acc_mots = ["mot de passe", "session", "badge", "portique", "vpn", "authentification", "compte bloqué",
-                "accès refusé"]
+        # ACCÈS (4000)
+        (["mot de passe", "session", "badge", "portique", "vpn", "accès refusé"], "ACCÈS", 3.5, "NON"),
+        (["vol de badge", "usurpation d'identité", "compte admin piraté"], "ACCÈS", 9.5, "OUI (Veto)")
+    ]
 
-    # --- GÉNÉRATION DES TICKETS ---
+    # Le comportement humain est chaotique et menteur : total aléatoire pour décorréler l'IA
+    def etat_user():
+        return random.choice(["NORMAL", "URGENT"])
 
-    for _ in range(1500):
-        # MÉDICAL BÉNIN (Score bas, Urgence aléatoire)
-        texte = f"{random.choice(med_bobo_verbes)} {random.choice(med_bobo_sujets)}"
-        donnees.append((random.randint(1, 5), "NORMAL", "Bobo", texte, "MÉDICAL", random.uniform(1.0, 3.5), "NON"))
+    def rang_user():
+        return random.randint(1, 5)
 
-        # MÉDICAL GRAVE (Score 10, Urgence aléatoire)
-        texte = f"{random.choice(med_grave_sujets)} {random.choice(med_grave_verbes)}"
-        donnees.append((random.randint(1, 5), "URGENT", "Urgence Vitale", texte, "MÉDICAL", 10.0, "OUI (Veto)"))
+    # 2000 tickets par concept = 20 000 tickets au total (4000 par domaine strict)
+    for mots, domaine, score_base, veto in concepts:
+        for _ in range(2000):
+            texte = f"{random.choice(bruit)} {random.choice(mots)} {random.choice(bruit)}".strip()
+            # Le score cible varie légèrement autour de sa vérité métier pour éviter le surapprentissage absolu
+            score_final = min(max(random.uniform(score_base - 1.0, score_base + 1.0), 1.0), 10.0)
+            if veto == "OUI (Veto)": score_final = 10.0
 
-        # INFRA MINEUR (Score bas)
-        donnees.append((random.randint(1, 5), "NORMAL", "Réseau", random.choice(infra_mineur_mots), "INFRA",
-                        random.uniform(2.0, 4.0), "NON"))
+            donnees.append((rang_user(), etat_user(), random.choice(titres), texte, domaine, score_final, veto))
 
-        # INFRA GRAVE (Score 10)
-        donnees.append(
-            (random.randint(3, 5), "URGENT", "Incident Majeur", random.choice(infra_grave_mots), "INFRA", 10.0,
-             "OUI (Veto)"))
-
-        # MATÉRIEL (Score bas, toujours)
-        texte = f"{random.choice(mat_mots)} {random.choice(mat_verbes)}"
-        donnees.append((random.randint(1, 5), "NORMAL", "Hardware", texte, "MATÉRIEL", random.uniform(1.0, 4.0), "NON"))
-
-        # RH
-        donnees.append(
-            (random.randint(1, 4), "NORMAL", "Admin", random.choice(rh_mots), "RH", random.uniform(2.0, 5.0), "NON"))
-
-        # ACCÈS
-        donnees.append(
-            (random.randint(1, 5), "NORMAL", "Auth", random.choice(acc_mots), "ACCÈS", random.uniform(2.0, 6.0), "NON"))
-
-    # Création du DataFrame et mélange (shuffle) pour ne pas fausser l'entraînement
     df = pd.DataFrame(donnees,
                       columns=['rang_priorite', 'etat_declare', 'titre_ticket', 'details_ticket', 'domaine_cible',
                                'score_cible', 'ethique_veto'])
     df = df.sample(frac=1).reset_index(drop=True)
     df.insert(0, 'id_ticket', [f"TKT-FAC{i:04d}" for i in range(len(df))])
 
-    # Injection SQL
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            df.to_sql('tickets', conn, if_exists='replace', index=False)
-            print(f"✅ Usine terminée : {len(df)} tickets avec variance linguistique générés.")
-    except Exception as e:
-        print(f"❌ Erreur : {e}")
+    with sqlite3.connect(DB_PATH) as conn:
+        df.to_sql('tickets', conn, if_exists='replace', index=False)
+        print(f"✅ Usine V4 terminée : {len(df)} tickets générés (Équilibre et Chaos activés).")
 
 
 if __name__ == "__main__":
-    generer_usine_massive()
+    generer_usine_monde_reel()
