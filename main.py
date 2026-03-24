@@ -5,32 +5,17 @@ from scipy.sparse import hstack, csr_matrix
 
 warnings.filterwarnings("ignore")
 
-# CONSTANTES (PEP 8 : Majuscules avec underscores)
+# CONSTANTES
 DB_PATH = "nexus_bionexus.db"
 MODEL_DOMAIN_PATH = "nexus_modele_domaine_v3.pkl"
 MODEL_SCORE_PATH = "nexus_modele_score_v3.pkl"
 VECTORIZER_PATH = "nexus_vectorizer_v3.pkl"
 
 
-def get_client_info(client_id: str) -> int:
-    """Récupère le niveau d'importance du client depuis la base de données."""
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT niveau_importance FROM clients WHERE id_client = ?",
-                (client_id,)
-            )
-            result = cursor.fetchone()
-            return result[0] if result else 1
-    except sqlite3.Error:
-        return 1
-
-
 def run_terminal_interface() -> None:
     """Lance l'interface en ligne de commande pour le diagnostic des tickets."""
     print("\n" + "=" * 60)
-    print(" 🧠 NEXUS BIONEXUS - MODE TERMINAL (LOGIQUE V3)")
+    print(" 🧠 NEXUS BIONEXUS - MODE TERMINAL (MONDE RÉEL)")
     print("=" * 60)
 
     try:
@@ -54,12 +39,14 @@ def run_terminal_interface() -> None:
         urgency_input = input("🚨 Urgence (1-5) : ").strip()
         urgency_level = int(urgency_input) if urgency_input.isdigit() else 3
 
-        # 1. Extraction des features (Convention ML : X majuscule pour les matrices)
+        # 1. Extraction des features
         X_text = vectorizer.transform([ticket_text])
-        client_importance = get_client_info(client_id)
 
-        # 3 est un placeholder pour le SLA dans ce contexte
-        X_metadata = csr_matrix([[urgency_level, client_importance, 3]])
+        # Le modèle est entraîné sur 2 features numériques STRICTEMENT : [rang_priorite, etat_num]
+        # On déduit l'état : URGENT (1) si urgence >= 4, sinon NORMAL (0)
+        etat_num = 1 if urgency_level >= 4 else 0
+
+        X_metadata = csr_matrix([[urgency_level, etat_num]])
         X_final = hstack([X_text, X_metadata])
 
         # 2. Prédictions
