@@ -106,3 +106,6 @@ def run_terminal_interface() -> None:
 
 if __name__ == "__main__":
     run_terminal_interface()
+    
+
+# la fin
