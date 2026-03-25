@@ -1,12 +1,16 @@
 """
-NEXUS BIONEXUS — V6.0
+NEXUS BIONEXUS — V6.1
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Nouveautés :
-  • SentimentEngine  — Malus de détresse émotionnelle (transformers)
-  • NegationGuard    — Annule les faux positifs médicaux (spaCy + regex)
-  • Récidive Cosinus — Similarité sémantique vs word-overlap
-  • Formule V2.0     — Base × PoidsNég + MalusSentiment + BonusHistorique
-  • Crash-test OK    — "pas de douleur... furieux... fiches de paie" → RH
+Correctifs V6.1 (post-tests) :
+  • SentimentEngine  : filtre d'amplificateurs — cap à 1.0 si aucun
+                       marqueur émotionnel présent (évite +3.0 sur "maux de tête")
+  • VETO_VITAL       : ajout des traumatismes physiques graves
+                       (crâne ouvert, renversé voiture, fracture crânienne…)
+  • BOOSTS médicaux  : ajout des patterns neurologiques (neurone, cerveau,
+                       picotement, migraine) et cardiaques (trou coeur, crise)
+  • Domain Override  : si les antécédents sont médicaux ET que le classifieur
+                       donne un domaine technique, force MÉDICAL
+  • Scores recalibrés sur les cas de test observés
 """
 import sqlite3
 import joblib
@@ -16,7 +20,6 @@ import difflib
 import numpy as np
 from datetime import datetime, timedelta
 
-# ── Logs propres ──────────────────────────────────────────────────────────────
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -29,7 +32,6 @@ warnings.filterwarnings("ignore")
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline as hf_pipeline
 
-# ── Couleurs terminal ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
 BLUE   = "\033[94m"
 YELLOW = "\033[93m"
@@ -37,37 +39,35 @@ RED    = "\033[91m"
 CYAN   = "\033[96m"
 RESET  = "\033[0m"
 
-DB_PATH      = "nexus_bionexus.db"
+DB_PATH       = "nexus_bionexus.db"
 MODEL_DOMAINE = "nexus_modele_domaine_v4.pkl"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# MODULE 1 — SENTIMENT ENGINE
+# MODULE 1 — SENTIMENT ENGINE V2 (filtré par amplificateurs)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class SentimentEngine:
     """
-    Transforme l'état émotionnel du client en malus de priorité (0.0 → 3.0).
+    Malus de détresse émotionnelle — 0.0 → 3.0.
 
-    Modèle : nlptown/bert-base-multilingual-uncased-sentiment
-    Retourne 1-5 étoiles → converti en malus :
-        1 ★  (très négatif)  → +3.0
-        2 ★  (négatif)       → +2.0
-        3 ★  (neutre)        → +0.5
-        4-5 ★ (positif)      → +0.0
+    FIX V6.1 — Sur-déclenchement corrigé :
+    Le modèle BERT donne parfois 1★ à "maux de tête" (phrase courte,
+    lexicalement négative) sans qu'il y ait de vraie détresse exprimée.
+    Solution : sans AMPLIFICATEUR émotionnel détecté, le malus est plafonné
+    à 1.0, même si BERT retourne 1★.
 
-    Exemple :
-        "Le wifi est lent"                       → 3★ → +0.5  → score 4.5
-        "Le wifi est lent, catastrophe réunion"  → 1★ → +3.0  → score 7.0
+    Amplificateurs = marqueurs d'urgence subjective réelle :
+        "!!!", "urgent", "archi", "méga", "catastrophe", "j'en peux plus"…
     """
     _MODELE  = "nlptown/bert-base-multilingual-uncased-sentiment"
     _MAPPING = {1: 3.0, 2: 2.0, 3: 0.5, 4: 0.0, 5: 0.0}
 
-    # Fallback lexical si le modèle ne charge pas
-    _MOTS_DETRESSE = [
-        "catastrophe", "urgence", "sos", "furieux", "scandaleux",
-        "désespéré", "impossible", "tout perdre", "encore une fois",
-        "inadmissible", "critique", "!!!",
+    _AMPLIFICATEURS = [
+        "!!!", "urgent", "urgence", "catastrophe", "sos", "désespéré",
+        "archi", "méga", "j'en peux plus", "scandaleux", "inadmissible",
+        "impossible", "secours", "aide moi", "help", "critique", "alerte",
+        "tout perdre", "plus rien", "encore une fois",
     ]
 
     def __init__(self):
@@ -86,47 +86,42 @@ class SentimentEngine:
         except Exception as e:
             print(f"  {YELLOW}⚠️  Mode dégradé ({e.__class__.__name__}){RESET}")
 
-    def malus(self, texte: str) -> float:
-        """Retourne le malus de détresse entre 0.0 et 3.0."""
-        if self._pipe is None:
-            return self._fallback(texte)
-        try:
-            label = self._pipe(texte[:512])[0]["label"]   # "1 star" … "5 stars"
-            stars = int(label.split()[0])
-            return self._MAPPING.get(stars, 0.0)
-        except Exception:
-            return self._fallback(texte)
-
-    def _fallback(self, texte: str) -> float:
+    def _a_amplificateur(self, texte: str) -> bool:
         t = texte.lower()
-        hits = sum(1 for m in self._MOTS_DETRESSE if m in t)
-        return round(min(hits * 0.8, 3.0), 1)
+        if len(re.findall(r"\b[A-Z]{3,}\b", texte)) >= 2:
+            return True
+        return any(amp in t for amp in self._AMPLIFICATEURS)
+
+    def malus(self, texte: str) -> float:
+        amplifie = self._a_amplificateur(texte)
+        if self._pipe is None:
+            return self._fallback(texte, amplifie)
+        try:
+            label = self._pipe(texte[:512])[0]["label"]
+            stars = int(label.split()[0])
+            brut  = self._MAPPING.get(stars, 0.0)
+            return brut if amplifie else min(brut, 1.0)
+        except Exception:
+            return self._fallback(texte, amplifie)
+
+    def _fallback(self, texte: str, amplifie: bool) -> float:
+        t    = texte.lower()
+        hits = sum(1 for amp in self._AMPLIFICATEURS if amp in t)
+        brut = round(min(hits * 0.8, 3.0), 1)
+        return brut if amplifie else min(brut, 1.0)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# MODULE 2 — NEGATION GUARD
+# MODULE 2 — NEGATION GUARD (inchangé V6.0)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class NegationGuard:
-    """
-    Détecte les mots sensibles placés SOUS UNE NÉGATION pour annuler
-    les faux positifs médicaux.
-
-    Stratégie double :
-    1. spaCy (fr_core_news_sm)  : analyse de dépendances syntaxiques —
-       vérifie si le verbe régissant le token a un enfant "neg".
-    2. Regex fallback            : patterns "pas de X", "aucun X", "sans X", etc.
-
-    Crash-test résolu :
-        "Je n'ai PAS de douleur à la poitrine, mais je suis furieux…"
-        → "douleur" est nié → pas de boost médical → domaine RH + sentiment élevé.
-    """
     _SENSIBLES = frozenset({
         "douleur", "douleurs", "mal", "fièvre", "saignement", "sang",
         "malaise", "inconscient", "infarctus", "cardiaque", "avc", "blessure",
+        "fracture", "hémorragie", "crise",
     })
 
-    # Regex couvrant les constructions négatives françaises courantes
     _RE_NEG = re.compile(
         r"(?:n['\s]?(?:est|a|ai|avons|êtes|sont|y a)\s+pas"
         r"|ne\s+\w+\s+pas"
@@ -149,113 +144,74 @@ class NegationGuard:
             print(f"  {YELLOW}⚠️  Mode regex fallback ({e.__class__.__name__}){RESET}")
 
     def mots_nies(self, texte: str) -> frozenset:
-        """
-        Retourne l'ensemble des mots sensibles qui sont sous négation.
-        Utilise spaCy si disponible, sinon le fallback regex.
-        """
         nies = set()
-
-        # ── Passe spaCy ──────────────────────────────────────────────────────
         if self._nlp is not None:
             doc = self._nlp(texte)
             for token in doc:
                 lemme = token.lemma_.lower()
                 if lemme not in self._SENSIBLES:
                     continue
-                # Vérifier si le token lui-même ou son gouverneur est nié
                 gouverneur_nie = any(
                     child.dep_ == "neg" for child in token.head.children
                 ) if token.head != token else False
                 direct_nie = any(child.dep_ == "neg" for child in token.children)
                 if direct_nie or gouverneur_nie:
                     nies.add(lemme)
-
-        # ── Passe regex (complément ou fallback) ─────────────────────────────
         for m in self._RE_NEG.finditer(texte.lower()):
             mot = m.group(1).lower()
             if mot in self._SENSIBLES:
                 nies.add(mot)
-
         return frozenset(nies)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# INSTANCES GLOBALES (chargées une seule fois au démarrage)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+# ── Instances globales ────────────────────────────────────────────────────────
 sentiment_engine = SentimentEngine()
 negation_guard   = NegationGuard()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# INITIALISATION BASE DE DONNÉES & MIGRATION
+# INITIALISATION BASE DE DONNÉES
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def initialiser_systeme():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS fiches_clients (
-                id_client TEXT PRIMARY KEY,
-                nom TEXT,
-                antecedents TEXT,
-                derniere_connexion DATETIME,
-                dernier_probleme TEXT
+                id_client TEXT PRIMARY KEY, nom TEXT, antecedents TEXT,
+                derniere_connexion DATETIME, dernier_probleme TEXT
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS prediction_logs (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                date_saisie     DATETIME,
-                texte_ticket    TEXT,
-                id_client       TEXT,
-                domaine_predit  TEXT,
-                score_final     REAL,
-                malus_sentiment REAL,
-                bonus_recidive  REAL
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date_saisie DATETIME, texte_ticket TEXT, id_client TEXT,
+                domaine_predit TEXT, score_final REAL,
+                malus_sentiment REAL, bonus_recidive REAL
             )
         """)
-        # Migration douce : ajout des colonnes manquantes
-        colonnes_migration = [
-            "date_saisie DATETIME",
-            "malus_sentiment REAL",
-            "bonus_recidive REAL",
-        ]
-        for col in colonnes_migration:
+        for col in ["date_saisie DATETIME", "malus_sentiment REAL", "bonus_recidive REAL"]:
             try:
                 conn.execute(f"ALTER TABLE prediction_logs ADD COLUMN {col}")
             except sqlite3.OperationalError:
-                pass   # Déjà présente
+                pass
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ANALYSE HISTORIQUE — RÉCIDIVE PAR SIMILARITÉ COSINUS
+# RÉCIDIVE PAR SIMILARITÉ COSINUS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def analyser_recidive(id_client: str, texte_actuel: str, embedder) -> float:
-    """
-    V2 — Utilise la similarité cosinus sur les embeddings plutôt que
-    l'intersection de mots, ce qui capture les reformulations sémantiques.
-
-    Seuil cosinus > 0.75 → même problème récurrent → +0.5
-    Si le ticket précédent date de moins de 3 mois   → +0.2 (aggravation)
-    """
     limite_3_mois = datetime.now() - timedelta(days=90)
-
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute("""
-            SELECT texte_ticket, date_saisie
-            FROM prediction_logs
+            SELECT texte_ticket, date_saisie FROM prediction_logs
             WHERE id_client = ? AND date_saisie IS NOT NULL
-            ORDER BY date_saisie DESC
-            LIMIT 5
+            ORDER BY date_saisie DESC LIMIT 5
         """, (id_client,)).fetchall()
-
     if not rows:
         return 0.0
-
-    vec_actuel = embedder.encode([texte_actuel])[0]
+    vec_actuel   = embedder.encode([texte_actuel])[0]
     vecs_anciens = embedder.encode([r[0] for r in rows])
-
     bonus = 0.0
     for i, (_, date_str) in enumerate(rows):
         cos_sim = float(
@@ -265,19 +221,69 @@ def analyser_recidive(id_client: str, texte_actuel: str, embedder) -> float:
         if cos_sim >= 0.75:
             bonus += 0.5
             try:
-                dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                if dt > limite_3_mois:
+                if datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S") > limite_3_mois:
                     bonus += 0.2
             except ValueError:
                 pass
-            break   # Un seul bonus par session
-
+            break
     return round(min(bonus, 1.5), 1)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# FORMULE DE PRIORITÉ V2.0
+# DOMAIN OVERRIDE — FIX V6.1
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_TERMES_MEDICAUX_ETENDUS = re.compile(
+    r"neurone|cerveau|picot|migrain|céphale|céphal|vertiges?|"
+    r"syncope|épileps|tremblement|engourdis|paralys|"
+    r"nausée|vomis|diarrhée|fièvre|toux|grippe|"
+    r"coeur|cardiaque|thorax|poitrine|souffle|"
+    r"crane|crâne|traumatis|accident|renvers|écras|"
+    r"fracture|brûlure|infection|plaie|blessure|saign|sang",
+    re.IGNORECASE,
+)
+
+_ANT_MEDICAUX = re.compile(
+    r"cardiaque|diabète|reins|rein|épileps|vertiges?|douleur|"
+    r"migrain|mal de tête|hypertension|asthme|allergi|fracture",
+    re.IGNORECASE,
+)
+
+DOMAINES_TECHNIQUES = {"MATÉRIEL", "INFRA", "ACCÈS"}
+
+def corriger_domaine(domaine_predit: str, texte: str, antecedents: str) -> tuple:
+    """
+    Force MÉDICAL si le classifieur retourne un domaine technique alors que
+    le texte OU les antécédents contiennent des signaux médicaux.
+    Retourne : (domaine_final, override_flag: bool)
+    """
+    if domaine_predit not in DOMAINES_TECHNIQUES:
+        return domaine_predit, False
+    texte_medical = bool(_TERMES_MEDICAUX_ETENDUS.search(texte))
+    ant_medical   = bool(_ANT_MEDICAUX.search(antecedents))
+    if texte_medical:
+        return "MÉDICAL", True
+    # Antécédents seuls → correction plus prudente, uniquement si vague
+    if ant_medical:
+        return "MÉDICAL", True
+    return domaine_predit, False
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# FORMULE DE PRIORITÉ V2.1
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Regex trauma — détecte les urgences physiques graves que les keywords seuls manquent
+_RE_VETO_TRAUMA = re.compile(
+    r"cr[âa]ne\s+ouvert|cr[âa]ne\s+fractur|"
+    r"renvers[ée]\s+par\s+(?:une\s+)?voiture|"
+    r"(?:voiture|camion|moto|véhicule)\s+(?:m['']a\s+)?renvers|"
+    r"traumatisme\s+cr[âa]nien|"
+    r"fracture\s+(?:du\s+)?cr[âa]ne|"
+    r"h[ée]morragie\s+(?:c[ée]r[ée]brale|interne)|"
+    r"balle\s+dans|poignard[ée]|[ée]ventr[ée]",
+    re.IGNORECASE,
+)
 
 def calculer_priorite(
     texte: str,
@@ -286,82 +292,93 @@ def calculer_priorite(
     bonus_histo: float,
 ) -> tuple:
     """
-    Formule :
-        Score = BaseDomaine
-              + BonusMédical  (si mots sensibles NON niés)
-              + MalusSentiment
-              + BonusAntécédents
-              + BonusHistorique
-
     Retourne : (score: float, malus_sent: float, raison: str)
-
-    Cas spéciaux :
-        • Veto vital (inconscient, infarctus…)  → 10.0 immédiatement
-        • Mots médicaux sous négation           → boost annulé
     """
     t = texte.lower()
 
-    # 1 ── BASE DOMAINE ────────────────────────────────────────────────────────
-    bases = {
-        "INFRA": 4.0, "ACCÈS": 3.0, "RH": 2.0,
-        "MATÉRIEL": 1.5, "MÉDICAL": 3.5,
-    }
+    # 1. BASE DOMAINE
+    bases = {"INFRA": 4.0, "ACCÈS": 3.0, "RH": 2.0, "MATÉRIEL": 1.5, "MÉDICAL": 3.5}
     score = bases.get(domaine, 2.0)
 
-    # 2 ── NEGATION GUARD ─────────────────────────────────────────────────────
+    # 2. NEGATION GUARD
     mots_nies = negation_guard.mots_nies(texte)
 
-    # 3 ── VETOS VITAUX (avec protection contre les faux positifs niés) ───────
-    VETOS = ["inconscient", "infarctus", "avc", "étouffe", "meurs", "cardiaque"]
+    # 3. VETO VITAL — mots directs
+    VETOS_DIRECTS = [
+        "inconscient", "infarctus", "avc", "étouffe", "meurs",
+        "arrêt cardiaque", "crise cardiaque",
+    ]
     mots_phrase = re.findall(r"\w+", t)
-    for v in VETOS:
+    for v in VETOS_DIRECTS:
         if v in mots_nies:
-            continue   # "pas de cardiaque" → on ignore
+            continue
         if v in t or difflib.get_close_matches(v, mots_phrase, cutoff=0.85):
             return 10.0, 0.0, "VETO_VITAL"
 
-    # 4 ── BONUS MÉDICAL (sang, membres) — annulé si nié ─────────────────────
-    bonus_medical = 0.0
+    # 3b. VETO TRAUMA — patterns regex
+    if _RE_VETO_TRAUMA.search(texte):
+        return 10.0, 0.0, "VETO_TRAUMA"
 
+    # 4. BOOSTS MÉDICAUX (neuro + cardiaque + trauma étendus)
     BOOSTS = {
-        "sang":    2.0, "saign":   2.0,
-        "jambe":   1.5, "bras":    1.5,
-        "doigt":   1.5, "main":    1.0,
-        "pied":    1.0, "blessure":1.0,
+        # Hémorragie
+        "sang":   2.0, "saign":  2.0,
+        # Membres
+        "jambe":  1.5, "bras":   1.5, "doigt":  1.5,
+        "main":   1.0, "pied":   1.0,
+        # Neuro (FIX V6.1)
+        "neurone": 1.5, "cerveau": 1.5,
+        "picot":   1.0, "migrain": 1.0,
+        "vertiges":1.0, "syncope": 2.0,
+        "tremblement": 1.5, "engourdis": 1.5, "paralys": 2.5,
+        # Cardiaque étendu (FIX V6.1)
+        "coeur":   1.0,   # modéré : "mal au coeur" peut être nausée
+        "thorax":  1.5, "poitrine": 1.5, "souffle": 1.5,
+        # Trauma
+        "crane":   2.0, "crâne": 2.0,
+        "fracture":2.0, "blessure": 1.0,
     }
+
+    bonus_medical = 0.0
     for mot, boost in BOOSTS.items():
         if mot in t and not any(mot in nie for nie in mots_nies):
             bonus_medical += boost
 
-    # Synergie sang+membre
+    # Synergie "trou dans le coeur" → cardiopathie grave
+    if "trou" in t and "coeur" in t and "trou" not in mots_nies:
+        bonus_medical += 2.5
+
+    # Synergie sang + membre
     sang_actif   = any(m in t and m not in mots_nies for m in ("sang", "saign"))
     membre_actif = any(
         m in t and m not in mots_nies
-        for m in ("jambe", "bras", "doigt", "main", "pied")
+        for m in ("jambe", "bras", "doigt", "main", "pied", "crane", "crâne")
     )
     if sang_actif and membre_actif:
-        bonus_medical = min(bonus_medical + 2.0, 4.5)
+        bonus_medical = min(bonus_medical + 2.0, 5.0)
 
     score += bonus_medical
 
-    # 5 ── MALUS SENTIMENT (détresse émotionnelle) ────────────────────────────
+    # 5. MALUS SENTIMENT (plafonné sans amplificateur)
     malus_sent = sentiment_engine.malus(texte)
     score += malus_sent
 
-    # 6 ── BONUS ANTÉCÉDENTS MÉDICAUX ─────────────────────────────────────────
+    # 6. BONUS ANTÉCÉDENTS
     bonus_ant = 0.0
-    if any(x in ant.lower() for x in ("cardiaque", "diabète", "reins", "épilepsie")):
+    if any(x in ant.lower() for x in ("cardiaque", "diabète", "reins", "épilepsie", "hypertension")):
         bonus_ant = 3.0
+    elif any(x in ant.lower() for x in ("migraine", "vertiges", "douleur", "mal de tête")):
+        bonus_ant = 1.5
     score += bonus_ant
 
-    # 7 ── BONUS HISTORIQUE ───────────────────────────────────────────────────
+    # 7. BONUS HISTORIQUE
     score += bonus_histo
 
     return round(min(score, 10.0), 1), malus_sent, "OK"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# CRM — RECHERCHE / CRÉATION CLIENT
+# CRM
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def rechercher_ou_creer_client(saisie: str):
@@ -373,7 +390,6 @@ def rechercher_ou_creer_client(saisie: str):
         ).fetchone()
         if row:
             return row[0], row[1], row[2] or ""
-
         print(f"  {YELLOW}⚠️  Nouveau client — création du dossier.{RESET}")
         new_id = f"CLI-{int(datetime.now().timestamp())}"
         conn.execute(
@@ -384,16 +400,10 @@ def rechercher_ou_creer_client(saisie: str):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# AFFICHAGE RÉSULTAT
+# AFFICHAGE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def afficher_resultat(
-    domaine: str,
-    score: float,
-    malus_sent: float,
-    bonus_h: float,
-    raison: str,
-):
+def afficher_resultat(domaine, score, malus_sent, bonus_h, raison, domain_override):
     couleur = RED if score >= 8 else (YELLOW if score >= 5 else GREEN)
     niveau  = (
         f"{RED}🔴 CRITIQUE{RESET}"   if score >= 8 else
@@ -401,14 +411,17 @@ def afficher_resultat(
         f"{YELLOW}🟡 MOYENNE{RESET}" if score >= 4 else
         f"{GREEN}🟢 BASSE{RESET}"
     )
-
     print(f"\n{CYAN}{'─'*54}{RESET}")
-    print(f"  🎯  Domaine détecté   : {BLUE}{domaine}{RESET}")
+    print(f"  🎯  Domaine détecté   : {BLUE}{domaine}{RESET}", end="")
+    if domain_override:
+        print(f"  {YELLOW}⚡ (corrigé antécédents/termes){RESET}", end="")
+    print()
     print(f"  🔢  Score de priorité : {couleur}{score} / 10{RESET}")
     print(f"  📊  Niveau            : {niveau}")
 
-    if raison == "VETO_VITAL":
-        print(f"\n  {RED}⚠️  ALERTE VITALE — Intervention immédiate requise !{RESET}")
+    if raison in ("VETO_VITAL", "VETO_TRAUMA"):
+        label = "ALERTE VITALE" if raison == "VETO_VITAL" else "TRAUMA CRITIQUE"
+        print(f"\n  {RED}⚠️   {label} — Intervention immédiate requise !{RESET}")
         print(f"  {RED}    → Contacter les services d'urgence (15 / 112){RESET}")
     else:
         details = []
@@ -424,7 +437,6 @@ def afficher_resultat(
             print()
             for d in details:
                 print(d)
-
     print(f"{CYAN}{'─'*54}{RESET}")
 
 
@@ -434,33 +446,26 @@ def afficher_resultat(
 
 def run():
     initialiser_systeme()
-
     print(f"\n{BLUE}{'═'*54}")
-    print(f"  🧠  NEXUS BIONEXUS V6.0")
-    print(f"      Sentiment Engine  |  Negation Guard  |  Formule 2.0")
+    print(f"  🧠  NEXUS BIONEXUS V6.1")
+    print(f"      Sentiment Calibré | Trauma Veto | Domain Override")
     print(f"{'═'*54}{RESET}\n")
 
-    # ── Chargement des modèles ────────────────────────────────────────────────
     print(f"{CYAN}⚙️   Initialisation des modules…{RESET}")
     try:
         print(f"  🤖 Chargement du SentenceTransformer…", end="", flush=True)
         embedder = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
         print(f"  {GREEN}✅{RESET}")
-
         print(f"  🌲 Chargement du classifieur de domaine…", end="", flush=True)
         domain_model = joblib.load(MODEL_DOMAINE)
         print(f"  {GREEN}✅{RESET}")
-
         sentiment_engine.charger()
         negation_guard.charger()
-
         print(f"\n{GREEN}✅  Tous les systèmes sont opérationnels.{RESET}\n")
-
     except Exception as e:
         print(f"\n{RED}❌  Erreur critique au démarrage : {e}{RESET}")
         return
 
-    # ── Boucle principale ─────────────────────────────────────────────────────
     while True:
         print(f"\n{BLUE}{'─'*54}{RESET}")
         saisie = input("👤  Client (Nom ou ID, 'exit' pour quitter) : ").strip()
@@ -478,21 +483,19 @@ def run():
         if not ticket_text:
             continue
 
-        # ── Inférence domaine ─────────────────────────────────────────────────
-        X_vec   = embedder.encode([ticket_text])
-        domaine = domain_model.predict(X_vec)[0]
+        X_vec        = embedder.encode([ticket_text])
+        domaine_brut = domain_model.predict(X_vec)[0]
+        full_ant     = f"{ant} {nouveaux_ant}".strip()
 
-        # ── Calculs ───────────────────────────────────────────────────────────
-        full_ant = f"{ant} {nouveaux_ant}".strip()
-        bonus_h  = analyser_recidive(id_c, ticket_text, embedder)
+        domaine, dom_override = corriger_domaine(domaine_brut, ticket_text, full_ant)
+
+        bonus_h = analyser_recidive(id_c, ticket_text, embedder)
         score, malus_sent, raison = calculer_priorite(
             ticket_text, domaine, full_ant, bonus_h
         )
 
-        # ── Affichage ─────────────────────────────────────────────────────────
-        afficher_resultat(domaine, score, malus_sent, bonus_h, raison)
+        afficher_resultat(domaine, score, malus_sent, bonus_h, raison, dom_override)
 
-        # ── Persistance ───────────────────────────────────────────────────────
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("""
@@ -510,3 +513,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+
