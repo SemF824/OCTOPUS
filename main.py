@@ -40,7 +40,7 @@ CYAN   = "\033[96m"
 RESET  = "\033[0m"
 
 DB_PATH       = "nexus_bionexus.db"
-MODEL_DOMAINE = "nexus_modele_domaine_v4.pkl"
+MODEL_DOMAINE = "nexus_v5_pipeline.pkl"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -251,21 +251,47 @@ _ANT_MEDICAUX = re.compile(
 
 DOMAINES_TECHNIQUES = {"MATÉRIEL", "INFRA", "ACCÈS"}
 
+# main.py — remplace entièrement corriger_domaine (lignes 254-269)
+
 def corriger_domaine(domaine_predit: str, texte: str, antecedents: str) -> tuple:
     """
-    Force MÉDICAL si le classifieur retourne un domaine technique alors que
-    le texte OU les antécédents contiennent des signaux médicaux.
-    Retourne : (domaine_final, override_flag: bool)
+    Override MÉDICAL uniquement si le TEXTE DU TICKET lui-même contient
+    des signaux médicaux clairs. Les antécédents seuls ne suffisent plus.
     """
     if domaine_predit not in DOMAINES_TECHNIQUES:
         return domaine_predit, False
+
+    # Garde-fou absolu : si le texte contient un mot technique dominant,
+    # aucun antécédent médical ne peut overrider
+    _TERMES_TECHNIQUES_FORTS = re.compile(
+        r"souris|clavier|écran|imprimante|laptop|ordinateur|câble|"
+        r"wifi|vpn|réseau|serveur|routeur|connexion|fibre|proxy|"
+        r"badge|mot de passe|token|session|accès|authentification|"
+        r"salaire|congés|paie|contrat|mutuelle",
+        re.IGNORECASE,
+    )
+    if _TERMES_TECHNIQUES_FORTS.search(texte):
+        return domaine_predit, False   # Jamais d'override si terme technique présent
+
+    # Override uniquement si le texte lui-même a un signal médical
     texte_medical = bool(_TERMES_MEDICAUX_ETENDUS.search(texte))
-    ant_medical   = bool(_ANT_MEDICAUX.search(antecedents))
-    if texte_medical:
+    if not texte_medical:
+        return domaine_predit, False
+
+    # Signal médical dans le texte + antécédents concordants → override
+    ant_medical = bool(_ANT_MEDICAUX.search(antecedents))
+    if texte_medical and ant_medical:
         return "MÉDICAL", True
-    # Antécédents seuls → correction plus prudente, uniquement si vague
-    if ant_medical:
+
+    # Signal médical fort dans le texte seul (sans antécédents) → override quand même
+    _TERMES_MEDICAUX_FORTS = re.compile(
+        r"douleur|fièvre|saign|infarctus|avc|fracture|blessure|"
+        r"convulsions?|paralys|hémorragie|traumatis|inconscient",
+        re.IGNORECASE,
+    )
+    if _TERMES_MEDICAUX_FORTS.search(texte):
         return "MÉDICAL", True
+
     return domaine_predit, False
 
 
@@ -277,7 +303,7 @@ def corriger_domaine(domaine_predit: str, texte: str, antecedents: str) -> tuple
 _RE_VETO_TRAUMA = re.compile(
     r"cr[âa]ne\s+ouvert|cr[âa]ne\s+fractur|"
     r"renvers[ée]\s+par\s+(?:une\s+)?voiture|"
-    r"(?:voiture|camion|moto|véhicule)\s+(?:m['']a\s+)?renvers|"
+    r"(?:voiture|camion|moto|véhicule)\s+(?:m['a]\s+)?renvers|"
     r"traumatisme\s+cr[âa]nien|"
     r"fracture\s+(?:du\s+)?cr[âa]ne|"
     r"h[ée]morragie\s+(?:c[ée]r[ée]brale|interne)|"
@@ -303,21 +329,22 @@ def calculer_priorite(
     # 2. NEGATION GUARD
     mots_nies = negation_guard.mots_nies(texte)
 
-    # 3. VETO VITAL — mots directs
-    VETOS_DIRECTS = [
-        "inconscient", "infarctus", "avc", "étouffe", "meurs",
-        "arrêt cardiaque", "crise cardiaque",
-    ]
-    mots_phrase = re.findall(r"\w+", t)
-    for v in VETOS_DIRECTS:
-        if v in mots_nies:
-            continue
-        if v in t or difflib.get_close_matches(v, mots_phrase, cutoff=0.85):
-            return 10.0, 0.0, "VETO_VITAL"
+    # 3. VETO VITAL — uniquement si le domaine est MÉDICAL
+    if domaine == "MÉDICAL":
+        VETOS_DIRECTS = [
+            "inconscient", "infarctus", "avc", "étouffe", "meurs",
+            "arrêt cardiaque", "crise cardiaque",
+        ]
+        for v in VETOS_DIRECTS:
+            if v in mots_nies:
+                continue
+            # Comparaison exacte seulement — plus de difflib sur les vetos
+            if v in t:
+                return 10.0, 0.0, "VETO_VITAL"
 
-    # 3b. VETO TRAUMA — patterns regex
-    if _RE_VETO_TRAUMA.search(texte):
-        return 10.0, 0.0, "VETO_TRAUMA"
+        # 3b. VETO TRAUMA — patterns regex
+        if _RE_VETO_TRAUMA.search(texte):
+            return 10.0, 0.0, "VETO_TRAUMA"
 
     # 4. BOOSTS MÉDICAUX (neuro + cardiaque + trauma étendus)
     BOOSTS = {
@@ -453,12 +480,16 @@ def run():
 
     print(f"{CYAN}⚙️   Initialisation des modules…{RESET}")
     try:
-        print(f"  🤖 Chargement du SentenceTransformer…", end="", flush=True)
-        embedder = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+        # L'encodeur pour l'analyse de récidive (similarité cosinus)
+        print(f"  🤖 Chargement du SentenceTransformer (récidive)…", end="", flush=True)
+        recidive_encoder = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
         print(f"  {GREEN}✅{RESET}")
-        print(f"  🌲 Chargement du classifieur de domaine…", end="", flush=True)
+
+        # Le pipeline V5 contient son propre encodeur + classifieur
+        print(f"  🌲 Chargement du pipeline de domaine V5…", end="", flush=True)
         domain_model = joblib.load(MODEL_DOMAINE)
         print(f"  {GREEN}✅{RESET}")
+
         sentiment_engine.charger()
         negation_guard.charger()
         print(f"\n{GREEN}✅  Tous les systèmes sont opérationnels.{RESET}\n")
@@ -483,13 +514,12 @@ def run():
         if not ticket_text:
             continue
 
-        X_vec        = embedder.encode([ticket_text])
-        domaine_brut = domain_model.predict(X_vec)[0]
+        domaine_brut = domain_model.predict([ticket_text])[0]
         full_ant     = f"{ant} {nouveaux_ant}".strip()
 
         domaine, dom_override = corriger_domaine(domaine_brut, ticket_text, full_ant)
 
-        bonus_h = analyser_recidive(id_c, ticket_text, embedder)
+        bonus_h = analyser_recidive(id_c, ticket_text, recidive_encoder)
         score, malus_sent, raison = calculer_priorite(
             ticket_text, domaine, full_ant, bonus_h
         )
