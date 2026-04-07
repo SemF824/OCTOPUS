@@ -99,33 +99,67 @@ TEMPLATES = {
     },
 }
 
-# ── Cas de négation médicale (anti-faux-positifs) ─────────────────────────────
-NEGATIONS_CRITIQUES = [
-    ("je n'ai pas de douleur mais mon ordinateur est cassé",                  "MATÉRIEL"),
-    ("pas de fièvre mais le réseau est en panne",                             "INFRA"),
-    ("sans douleur toutefois mon salaire est manquant",                       "RH"),
-    ("je ne suis pas blessé mais mon compte est bloqué",                      "ACCÈS"),
-    ("aucune douleur à la poitrine mais je ne reçois plus mes fiches de paie","RH"),
-    ("je ne souffre pas mais le wifi ne marche plus",                         "INFRA"),
-    ("pas de malaise mais mon badge a expiré",                                "ACCÈS"),
-    ("je n'ai pas mal mais l'imprimante fume",                                "MATÉRIEL"),
-    ("aucun saignement juste un écran cassé",                                 "MATÉRIEL"),
-    ("pas d'AVC pas d'infarctus juste un problème de salaire",                "RH"),
-    ("pas de douleur thoracique mais je suis furieux sans mes fiches de paie","RH"),
-    ("aucune douleur mais la situation est catastrophique réseau down",        "INFRA"),
-    # FIX V8.1 : négations neuro
-    ("je n'ai pas de picotements juste un bug réseau",                        "INFRA"),
-    ("pas de maux de tête c'est mon clavier qui déconne",                     "MATÉRIEL"),
-    ("aucun vertige mais mon accès est bloqué",                               "ACCÈS"),
+# ── Cas de négation médicale (anti-faux-positifs) — Générateurs avec variation ──
+NEGATIONS_CRITIQUES_TEMPLATES = [
+    # INFRA
+    ("pas de {med} mais le {tech} est en panne",                   "INFRA",
+     {"med": ["douleur","fièvre","malaise"], "tech": ["réseau","wifi","VPN","serveur"]}),
+    ("je n'ai pas de {med} juste un bug {tech}",                   "INFRA",
+     {"med": ["douleur","vertiges","nausée"], "tech": ["réseau","serveur","proxy"]}),
+    ("aucun {med} mais la connexion {tech} est morte",              "INFRA",
+     {"med": ["saignement","malaise","fièvre"], "tech": ["fibre","VPN","réseau"]}),
+    ("sans {med} toutefois {tech} plante",                          "INFRA",
+     {"med": ["blessure","douleur","choc"], "tech": ["le wifi","le serveur","la fibre"]}),
+
+    # MATÉRIEL
+    ("pas de {med} c'est mon {mat} qui ne marche plus",            "MATÉRIEL",
+     {"med": ["douleur","maux de tête","fièvre"], "mat": ["clavier","écran","souris","imprimante"]}),
+    ("aucun {med} juste mon {mat} cassé",                          "MATÉRIEL",
+     {"med": ["saignement","malaise","blessure"], "mat": ["ordinateur","laptop","souris","dalle"]}),
+    ("je ne souffre pas mais {mat} déconne",                        "MATÉRIEL",
+     {"mat": ["l'imprimante","l'écran","le clavier","la batterie"]}),
+
+    # ACCÈS
+    ("pas de {med} mais mon {acc} a expiré",                       "ACCÈS",
+     {"med": ["douleur","vertige","malaise"], "acc": ["badge","mot de passe","token","certificat"]}),
+    ("aucun {med} juste mon {acc} bloqué",                         "ACCÈS",
+     {"med": ["saignement","fièvre","nausée"], "acc": ["compte","session","accès","authentification"]}),
+
+    # RH
+    ("pas d'{med} juste mon {rh} manquant",                        "RH",
+     {"med": ["infarctus","AVC","douleur"], "rh": ["salaire","prime","fiche de paie"]}),
+    ("aucune {med} à la poitrine mais {rh} absent",                 "RH",
+     {"med": ["douleur"], "rh": ["mes fiches de paie","ma paie","ma prime"]}),
+    ("sans {med} toutefois {rh} est introuvable",                   "RH",
+     {"med": ["blessure","malaise","fièvre"], "rh": ["mon salaire","mon contrat","ma mutuelle"]}),
+
+    # NEURO (FIX V8.1)
+    ("je n'ai pas de {neuro} juste un bug {tech}",                 "INFRA",
+     {"neuro": ["picotements","maux de tête","vertiges"], "tech": ["réseau","serveur","wifi"]}),
+    ("aucun {neuro} mais c'est mon {mat} qui déconne",              "MATÉRIEL",
+     {"neuro": ["picotement","migraine","vertige"], "mat": ["clavier","ordinateur","écran"]}),
 ]
+
+
+def generer_negations(nb=200):
+    """Génère des variations de négations pour éviter l'apprentissage par cœur"""
+    rows = []
+    for template, domaine, vocab in NEGATIONS_CRITIQUES_TEMPLATES:
+        for _ in range(nb):
+            phrase = template
+            for k, vals in vocab.items():
+                phrase = phrase.replace("{" + k + "}", random.choice(vals))
+            rows.append((phrase, domaine))
+    return rows
 
 
 def generer_master_data_v8():
     print(">>> 🛠️  DÉMARRAGE DE LA FORGE V8.1 (NEURO + TRAUMA + NÉGATIONS)...")
     donnees = []
 
-    NB_PAR_TON     = 600
-    NB_NEGATION    = 300
+    NB_PAR_TON = 300
+    NB_NEGATION = 200
+    MAX_PAR_DOMAINE = 2000
 
     for domaine, data in TEMPLATES.items():
         mots = data["mots_cles"]
@@ -136,9 +170,9 @@ def generer_master_data_v8():
                 phrase   = template.replace("{k}", mot)
                 donnees.append((phrase, domaine))
 
-    for phrase, domaine in NEGATIONS_CRITIQUES:
-        for _ in range(NB_NEGATION):
-            donnees.append((phrase, domaine))
+    # Génère des variations de négations (200 variations par template)
+    for phrase, domaine in generer_negations(NB_NEGATION):
+        donnees.append((phrase, domaine))
 
     df = pd.DataFrame(donnees, columns=["details_ticket", "domaine_cible"])
     df = df.sample(frac=1).reset_index(drop=True)
