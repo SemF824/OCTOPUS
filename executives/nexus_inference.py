@@ -32,4 +32,4 @@ def run_nexus_audit(model_file, test_file):
 
 
 if __name__ == "__main__":
-    run_nexus_audit('nexus_v5_pipeline.pkl', 'nexus_stress_test_5000.csv')
+    run_nexus_audit('../pickle_result/nexus_v7_pipeline.pkl', '../datasets/nexus_stress_test_5000.csv')
