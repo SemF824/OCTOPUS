@@ -28,8 +28,8 @@ def run_nexus_audit(model_file, test_file):
     print(f"✅ AUDIT TERMINÉ. PRÉCISION : {accuracy:.2f}%")
 
     # Sauvegarde des erreurs pour analyse
-    df[df['resultat'] == False].to_csv('audit_erreurs_nexus_v5.csv', index=False)
+    df[df['resultat'] == False].to_csv('../audit/audit_erreurs_nexus_v5.csv', index=False)
 
 
 if __name__ == "__main__":
-    run_nexus_audit('../pickle_result/nexus_v7_pipeline.pkl', '../datasets/nexus_stress_test_5000.csv')
+    run_nexus_audit('../pickle_result/nexus_v8.1_extended.pkl', '../datasets/nexus_stress_test_5000.csv')
