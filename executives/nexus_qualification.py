@@ -4,36 +4,33 @@ from nexus_config import MOTS_LIEUX
 
 class QualificationEngine:
     def __init__(self):
-        # Lexiques de base pour vérifier la présence d'informations clés
+        # Lexiques avec racines pour plus de tolérance (ex: "arm" capte arme, armé, armes)
         self.mots_anatomie = ["doigt", "ongle", "main", "bras", "jambe", "tête", "crâne", "poitrine", "coeur", "cœur",
                               "ventre", "abdomen", "nez", "oeil", "yeux", "dos", "cou", "pied", "cheville"]
-        self.mots_symptomes = ["mal", "douleur", "saigne", "sang", "cassé", "fracture", "hémorragie", "inconscient",
-                               "malaise", "brûlure", "étouffe", "respire", "fièvre", "coupure"]
+
+        self.mots_symptomes = ["mal", "douleur", "saigne", "sang", "cass", "fracture", "hémorragie", "inconscient",
+                               "malaise", "brûlure", "étouffe", "respire", "fièvre", "coupure", "picotement"]
 
         self.mots_materiel = ["pc", "ordinateur", "serveur", "vpn", "écran", "imprimante", "réseau", "wifi", "clavier",
                               "souris", "câble", "routeur", "logiciel", "application"]
-        self.mots_panne = ["marche plus", "panne", "bloqué", "erreur", "lent", "cassé", "éteint", "hs", "tombé", "bug",
+
+        self.mots_panne = ["marche plus", "panne", "bloqu", "erreur", "lent", "cass", "éteint", "hs", "tomb", "bug",
                            "accès", "mot de passe"]
 
     def qualifier_ticket(self, texte, domaine_principal, domaines_multiples=None):
-        """
-        Analyse le ticket et renvoie (Est_Complet (bool), Question_Relance (str))
-        Gère les vérifications tactiques (lieux, évacuation, etc.)
-        """
         t = texte.lower()
 
-        # Règle globale : Un ticket trop court est toujours incomplet
+        # 1. Règle globale : Un ticket trop court
         if len(texte.split()) < 3:
-            return False, "Votre description est trop courte. Pouvez-vous me donner plus de détails ?"
+            return False, "Respirez calmement. Je suis là pour vous aider mais votre message est un peu court. Que se passe-t-il exactement ?"
 
-        # --- VÉRIFICATION GLOBALE : LE LIEU ---
-        # Si c'est une urgence vitale ou multi-forces, on exige une localisation
+        # 2. Vérification du Lieu (Pour les urgences vitales)
         is_urgence_vitale = domaine_principal in ["MÉDICAL", "POMPIER", "POLICE"] or (
                     domaines_multiples and len(domaines_multiples) > 1)
         has_lieu = any(lieu in t for lieu in MOTS_LIEUX)
 
         if is_urgence_vitale and not has_lieu:
-            return False, "URGENCE : Veuillez préciser IMMÉDIATEMENT l'adresse ou le lieu exact de l'incident."
+            return False, "Restez en ligne avec moi. Pour envoyer les secours immédiatement, j'ai besoin de votre adresse exacte ou du lieu où vous vous trouvez."
 
         # --- QUALIFICATION MÉDICALE ---
         if domaine_principal == "MÉDICAL":
@@ -41,41 +38,46 @@ class QualificationEngine:
             has_symp = any(s in t for s in self.mots_symptomes)
 
             if not has_loc and not has_symp:
-                return False, "Pouvez-vous décrire votre problème médical et préciser la zone du corps concernée ?"
+                return False, "Les secours sont prévenus. Pouvez-vous me dire précisément où la personne a mal et quels sont les symptômes ?"
             if has_loc and not has_symp:
-                return False, "J'ai bien noté la zone. Que ressentez-vous exactement (douleur, saignement, etc.) ?"
+                return False, "J'ai bien noté la zone touchée. Ne bougez pas et dites-moi ce que vous ressentez exactement (douleur, saignement...) ?"
             if has_symp and not has_loc:
-                return False, "Je comprends le symptôme. À quel endroit du corps cela se situe-t-il ?"
+                return False, "Je comprends. À quel endroit précis du corps cela se situe-t-il ?"
 
-            # Question Tactique Médicale
+            # Question Tactique Médicale (Tolérance avec 'oui', 'non', etc.)
             if any(m in t for m in ["inconscient", "respire plus", "hémorragie", "malaise"]):
-                if not any(m in t for m in ["massage", "garrot", "compress", "seul"]):
-                    return False, "URGENCE VITALE : Êtes-vous seul avec la victime ? Les premiers secours (massage, compression) ont-ils commencé ?"
+                if not any(m in t for m in ["massage", "garrot", "compress", "seul", "oui", "non", "je fais"]):
+                    return False, "C'est une urgence. Êtes-vous seul avec la victime ? Avez-vous commencé les premiers secours (massage, compression) ?"
             return True, "Complet"
 
         # --- QUALIFICATION POMPIER ---
         elif domaine_principal == "POMPIER":
-            mots_urgences_feu = ["feu", "incendie", "fumée", "gaz", "fuite", "explosion", "accident", "coincé", "brûle"]
+            mots_urgences_feu = ["feu", "incendie", "fumée", "gaz", "fuite", "explosion", "accident", "coincé", "brûl"]
             if not any(m in t for m in mots_urgences_feu):
-                return False, "S'agit-il d'un incendie, d'une fuite de gaz ou d'un accident de la route ? Précisez le contexte."
+                return False, "Les pompiers sont en écoute. S'agit-il d'un incendie, d'une fuite ou d'un accident ? Détaillez la situation."
 
             # Question Tactique Pompier
             if any(m in t for m in ["feu", "incendie", "fumée", "explosion"]):
-                if not any(m in t for m in ["évacué", "personne à l'intérieur", "vide", "sortis", "sauvé"]):
-                    return False, "SÉCURITÉ : Le bâtiment a-t-il été évacué ? Y a-t-il encore des personnes à l'intérieur ?"
+                # Acceptation de "oui", "non", "en cours", "évacu" pour éviter la boucle infinie
+                if not any(m in t for m in
+                           ["évacu", "personne", "vide", "sorti", "sauvé", "oui", "non", "sais pas", "dedans",
+                            "encore"]):
+                    return False, "SÉCURITÉ : Ne prenez pas de risques. Le bâtiment est-il en cours d'évacuation ? Reste-t-il des personnes à l'intérieur ?"
             return True, "Complet"
 
         # --- QUALIFICATION POLICE ---
         elif domaine_principal == "POLICE":
-            mots_urgences_police = ["arme", "couteau", "fusil", "agression", "vol", "effraction", "menace", "frappe",
-                                    "violences", "rodéo", "cambriolage"]
+            # Ajout de "arm" (qui capte arme, armé, armes), "tir" (tire, tireur, tirent), "effract"
+            mots_urgences_police = ["arm", "couteau", "fusil", "agress", "vol", "effract", "menace", "frapp",
+                                    "violences", "rodéo", "cambriolage", "tir", "tueur"]
             if not any(m in t for m in mots_urgences_police):
-                return False, "Pouvez-vous préciser la nature exacte de l'infraction (vol, agression, arme...) ?"
+                return False, "La police est alertée. Mettez-vous à l'abri et précisez ce qu'il se passe (vol, agression, individus armés...)."
 
             # Question Tactique Police
-            if any(m in t for m in ["arme", "couteau", "fusil", "agression", "tireur", "fusillade"]):
-                if not any(m in t for m in ["fui", "parti", "maîtrisé", "sur place", "caché"]):
-                    return False, "SÉCURITÉ : Le ou les agresseurs sont-ils TOUJOURS SUR PLACE ?"
+            if any(m in t for m in ["arm", "couteau", "fusil", "agress", "tir", "fusillade"]):
+                # Tolérance des réponses
+                if not any(m in t for m in ["fui", "parti", "maîtris", "sur place", "cach", "oui", "non", "là", "ici"]):
+                    return False, "SÉCURITÉ : Cachez-vous si nécessaire. L'agresseur ou les individus sont-ils TOUJOURS SUR PLACE ?"
             return True, "Complet"
 
         # --- QUALIFICATION TECHNIQUE ---
@@ -84,10 +86,10 @@ class QualificationEngine:
             has_panne = any(p in t for p in self.mots_panne)
 
             if not has_mat:
-                return False, f"Sur quel équipement ou service ({domaine_principal}) rencontrez-vous ce problème ?"
+                return False, f"Nos techniciens ({domaine_principal}) sont prêts. Sur quel équipement ou service rencontrez-vous ce problème ?"
             if not has_panne:
-                return False, "Pouvez-vous décrire la nature exacte de la panne ou le message d'erreur ?"
+                return False, "Pouvez-vous nous décrire la nature exacte de la panne ou nous donner le message d'erreur ?"
             return True, "Complet"
 
-        # Autres domaines (RH, etc.)
+        # Autres domaines
         return True, "Complet"
