@@ -1,51 +1,37 @@
-# data_forge.py
-import sqlite3
+# nexus_forge.py
 import pandas as pd
-import random
-from nexus_config import DB_PATH
+import joblib
+import os
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from nexus_core import TextEncoder
+from nexus_config import MODEL_PATH, RF_PARAMS
 
 
-def generer_donnees_v7():
-    print("🛠️ Génération de la Forge V7...")
-    # (Tes générateurs de base ici...)
+def train():
+    print("🚀 Entraînement NEXUS V9 Multi-Output...")
+    chemin_ds = "../datasets/nexus_massive_dataset.csv"
 
-    # Injection des correctifs (Vaccins)
-    vaccins = [
-        ("ACCÈS", ["connexion VPN", "token MFA", "accès refusé", "mot de passe oublié"]),
-        ("INFRA", ["serveur en panne", "routeur HS", "latence réseau", "coupure fibre"]),
-        ("POMPIER", [
-            "incendie dans l'immeuble",
-            "feu de forêt signalé",
-            "fumée dans le couloir",
-            "explosion au rez-de-chaussée",
-            "fuite de gaz détectée",
-            "départ de feu en cuisine",
-            "voiture en feu sur l'autoroute",
-            "flammes visibles au 3ème étage",
-        ]),
-        ("POLICE", [
-            "agression dans la rue",
-            "cambriolage à mon domicile",
-            "vol de voiture signalé",
-            "violences conjugales",
-            "menaces de mort reçues",
-            "bagarre devant le bar",
-            "vol à l'arrachée",
-            "braquage signalé", "agression", "cambriolage", "vol de voiture", "violences", "braquage", "arme", "rodéo"
-        ]),
-    ]
+    if not os.path.exists(chemin_ds):
+        print("❌ Dataset introuvable. Lancez nexus_dataset_generator.py")
+        return
 
-    rows = []
-    for domaine, phrases in vaccins:
-        for p in phrases:
-            for _ in range(150):  # Poids fort
-                rows.append((p, domaine))
+    df = pd.read_csv(chemin_ds)
 
-    df = pd.DataFrame(rows, columns=["details_ticket", "domaine_cible"])
-    with sqlite3.connect(DB_PATH) as conn:
-        df.to_sql("tickets", conn, if_exists="append", index=False)
-    print("✅ Base de données prête pour Kaggle.")
+    # On apprend à prédire le Domaine, l'Impact ET l'Urgence
+    X = df['texte']
+    y = df[['domaine', 'impact', 'urgence']]
+
+    pipeline = Pipeline([
+        ('vectorizer', TextEncoder()),
+        ('classifier', RandomForestClassifier(**RF_PARAMS))
+    ])
+
+    pipeline.fit(X, y)
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    joblib.dump(pipeline, MODEL_PATH)
+    print(f"✅ IA Entraînée et sauvegardée : {MODEL_PATH}")
 
 
 if __name__ == "__main__":
-    generer_donnees_v7()
+    train()

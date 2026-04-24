@@ -17,7 +17,6 @@ class TextEncoder(BaseEstimator, TransformerMixin):
 
     def _get_encoder(self):
         if not hasattr(self, '_encoder') or self._encoder is None:
-            print(f"👁️ Chargement encodeur ({self.model_name})...")
             self._encoder = SentenceTransformer(self.model_name)
         return self._encoder
 
