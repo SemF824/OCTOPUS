@@ -1,66 +1,58 @@
 # nexus_qualification.py
+import joblib
+import os
+from nexus_config import MODEL_FRICTION_PATH
+
 
 class QualificationEngine:
     def __init__(self):
-        # Lexiques de base pour vérifier la présence d'informations clés
-        self.mots_anatomie = ["doigt", "ongle", "main", "bras", "jambe", "tête", "crâne", "poitrine", "coeur", "cœur",
-                              "ventre", "abdomen", "nez", "oeil", "yeux", "dos", "cou", "pied", "cheville"]
-        self.mots_symptomes = ["mal", "douleur", "saigne", "sang", "cassé", "fracture", "hémorragie", "inconscient",
-                               "malaise", "brûlure", "étouffe", "respire", "fièvre"]
+        if not os.path.exists(MODEL_FRICTION_PATH):
+            self.friction_model = None
+        else:
+            self.friction_model = joblib.load(MODEL_FRICTION_PATH)
 
+        # Lexiques pour la PERSONNALISATION DYNAMIQUE des messages
+        self.mots_anatomie = ["nez", "doigt", "ongle", "main", "bras", "jambe", "tête", "crâne", "poitrine", "coeur",
+                              "cœur", "ventre", "abdomen", "oeil", "yeux", "dos", "cou", "pied", "cheville"]
         self.mots_materiel = ["pc", "ordinateur", "serveur", "vpn", "écran", "imprimante", "réseau", "wifi", "clavier",
                               "souris", "câble", "routeur", "logiciel", "application"]
-        self.mots_panne = ["marche plus", "panne", "bloqué", "erreur", "lent", "cassé", "éteint", "hs", "tombé", "bug",
-                           "accès", "mot de passe"]
 
-    def qualifier_ticket(self, texte, domaine):
-        """
-        Analyse le ticket et renvoie (Est_Complet (bool), Question_Relance (str))
-        """
+        # Templates dynamiques (Les {zone} et {equipement} seront remplacés par l'IA)
+        self.dictionnaire_questions = {
+            "DEMANDE_SYMPTOME_MED": "J'ai bien noté que cela concerne {zone}. Que ressentez-vous exactement (douleur, saignement, etc.) ?",
+            "DEMANDE_LIEU_CORPS": "Je comprends vos symptômes. À quel endroit précis du corps avez-vous mal ?",
+            "DEMANDE_ACTION_POLICE": "Mettez-vous à l'abri. Les suspects ou agresseurs sont-ils toujours sur place ?",
+            "DEMANDE_LIEU_POLICE": "Pour envoyer les forces de l'ordre, j'ai absolument besoin de l'adresse ou du lieu précis.",
+            "DEMANDE_ETAT_POMPIER": "SÉCURITÉ : Le bâtiment a-t-il été évacué ? Y a-t-il encore des personnes à l'intérieur ?",
+            "DEMANDE_LIEU_POMPIER": "Les pompiers ont besoin de votre localisation exacte pour intervenir. Où êtes-vous ?",
+            "DEMANDE_PANNE_TECH": "Je vois que le problème vient de {equipement}. Quel est le problème exact ou le message d'erreur ?",
+            "DEMANDE_MATERIEL_TECH": "Je comprends la panne, mais sur quel équipement ou logiciel cela se produit-il ?",
+            "DEMANDE_DETAILS_GENERAUX": "Votre message est très court. Pouvez-vous m'en dire un peu plus pour que je comprenne bien ?"
+        }
+
+    def qualifier_ticket(self, texte, domaine_principal):
         t = texte.lower()
 
-        # Règle globale : Un ticket trop court est toujours incomplet
-        if len(texte.split()) < 3:
-            return False, "Votre description est trop courte. Pouvez-vous me donner plus de détails ?"
-
-        # --- QUALIFICATION MÉDICALE ---
-        if domaine == "MÉDICAL":
-            has_loc = any(loc in t for loc in self.mots_anatomie)
-            has_symp = any(s in t for s in self.mots_symptomes)
-
-            if not has_loc and not has_symp:
-                return False, "Pouvez-vous décrire votre problème et préciser la zone du corps concernée ?"
-            if has_loc and not has_symp:
-                return False, "J'ai bien noté la zone. Que ressentez-vous exactement (douleur, saignement, etc.) ?"
-            if has_symp and not has_loc:
-                return False, "Je comprends le symptôme. À quel endroit du corps cela se situe-t-il ?"
+        if self.friction_model is None:
             return True, "Complet"
 
-        # --- QUALIFICATION TECHNIQUE ---
-        elif domaine in ["INFRA", "MATÉRIEL", "ACCÈS"]:
-            has_mat = any(m in t for m in self.mots_materiel)
-            has_panne = any(p in t for p in self.mots_panne)
+        # 1. L'IA prédit le type d'information manquante
+        prediction_label = self.friction_model.predict([texte])[0]
 
-            if not has_mat:
-                return False, f"Sur quel équipement ou service ({domaine}) rencontrez-vous ce problème ?"
-            if not has_panne:
-                return False, "Pouvez-vous décrire la nature exacte de la panne ou le message d'erreur ?"
+        if prediction_label == "COMPLET":
             return True, "Complet"
 
-        # --- QUALIFICATION POMPIER ---
-        elif domaine == "POMPIER":
-            mots_urgences_feu = ["feu", "incendie", "fumée", "gaz", "fuite", "explosion", "accident", "coincé", "brûle"]
-            if not any(m in t for m in mots_urgences_feu):
-                return False, "S'agit-il d'un incendie, d'une fuite de gaz ou d'un accident de la route ? Précisez le contexte."
-            return True, "Complet"
+        # 2. Extraction dynamique pour PERSONNALISER le texte
+        # Cherche le mot exact utilisé par le client (ex: "nez", "pc")
+        zone_trouvee = next((mot for mot in self.mots_anatomie if mot in t), "cette zone")
+        equipement_trouve = next((mot for mot in self.mots_materiel if mot in t), "votre matériel")
 
-        # --- QUALIFICATION POLICE ---
-        elif domaine == "POLICE":
-            mots_urgences_police = ["arme", "couteau", "fusil", "agression", "vol", "effraction", "menace", "frappe",
-                                    "violences", "rodéo", "cambriolage"]
-            if not any(m in t for m in mots_urgences_police):
-                return False, "Pouvez-vous préciser la nature de l'infraction (vol, agression, arme...) et si les individus sont toujours sur place ?"
-            return True, "Complet"
+        # Astuce linguistique : si le mot n'a pas de déterminant, on ajoute "votre"
+        if zone_trouvee != "cette zone": zone_trouvee = "votre " + zone_trouvee
+        if equipement_trouve != "votre matériel": equipement_trouve = "votre " + equipement_trouve
 
-        # Autres domaines (RH, etc.)
-        return True, "Complet"
+        # 3. On récupère le template et on injecte les mots personnalisés
+        question_brute = self.dictionnaire_questions.get(prediction_label, "Pouvez-vous donner plus de détails ?")
+        question_personnalisee = question_brute.format(zone=zone_trouvee, equipement=equipement_trouve)
+
+        return False, question_personnalisee
