@@ -55,5 +55,5 @@ URGENCES = {
     }
 }
 
-# Alertes techniques
+# Alertes techniques-
 CRITICAL_TECH_KEYWORDS = ["explosion", "incendie", "feu", "fumée", "inondation", "catastrophe"]
