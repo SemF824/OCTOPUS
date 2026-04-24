@@ -15,7 +15,7 @@ RF_PARAMS = {
 }
 
 
-# --- LA MATRICE DE PRIORITÉ
+# --- LA MATRICE DE PRIORITÉ Urgence & Impact ---
 # Lignes (Impact) : 1=Mineur, 2=Significatif, 3=Majeur, 4=Critique
 # Colonnes (Urgence) : 1=Faible, 2=Moyenne, 3=Haute, 4=Immédiate
 MATRICE_PRIORITE = [
@@ -37,8 +37,7 @@ LOCALISATIONS = {
 RED_FLAGS = {
     "choc": {"mots": ["pâle", "froid", "sueur", "soif", "faible", "marbré"], "urgence": 3},
     "neuro": {"mots": ["vertige", "étourdi", "vomir", "nausée", "confus", "flou"], "urgence": 3},
-    "vital": {"mots": ["inconscient", "respire plus", "étouffe", "agonie", "arrêt"], "urgence": 4}
+    "vital": {"mots": ["inconscient", "respire plus", "étouffe", "agonie", "arrêt"], "urgence": 4},
+    # NOUVEAU : Traumatismes majeurs évidents même sans mention de sang
+    "amputation": {"mots": ["coupé", "arraché", "amputé", "sectionné", "broyé", "perdu ma", "perdu mon"], "urgence": 4}
 }
-
-# Alertes techniques critiques (Force l'impact 4 / Urgence 4)
-CRITICAL_TECH_KEYWORDS = ["explosion", "incendie", "feu", "fumée", "inondation", "catastrophe"]
