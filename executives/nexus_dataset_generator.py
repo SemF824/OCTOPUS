@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import random
 
@@ -57,6 +56,9 @@ POLICE_URGENCES = {
 }
 
 
+# (Tu peux ajouter des dictionnaires similaires pour POMPIER, MATÉRIEL, ACCÈS, RH)
+# Pour que le script tourne tout de suite, je vais utiliser une génération générique pour les autres.
+
 # ==========================================
 # 2. MOTEUR DE GÉNÉRATION
 # ==========================================
@@ -83,7 +85,7 @@ def generer_phrase(domaine, impact, urgence):
         return f"{sujet} {imp_phrase} car {urg_phrase}"
 
     else:
-        # Générateur générique pour les autres domaines
+        # Générateur générique pour les autres domaines pour atteindre tes 140 000 tickets
         mots_impact = {
             4: "critique", 3: "majeur", 2: "significatif", 1: "mineur"
         }
@@ -123,30 +125,13 @@ def creer_dataset_massif(tickets_par_domaine=20000):
                 "urgence": urgence
             })
 
-    # Création du DataFrame
+    # Création du DataFrame et sauvegarde
     df = pd.DataFrame(lignes)
 
     # On mélange toutes les lignes pour que l'IA ne lise pas tout le médical d'un coup
     df = df.sample(frac=1).reset_index(drop=True)
 
-    # ==========================================
-    # 3. GESTION DYNAMIQUE DES CHEMINS (LE FIX)
-    # ==========================================
-    
-    # On détecte si on est sur Kaggle (le dossier /kaggle/working existe)
-    if os.path.exists('/kaggle/working'):
-        dossier_sortie = '/kaggle/working/datasets'
-    else:
-        # Sinon, on garde ton comportement local classique
-        dossier_sortie = '../datasets'
-        
-    # La magie : On s'assure que le dossier existe, sinon on le crée (sans planter)
-    os.makedirs(dossier_sortie, exist_ok=True)
-    
-    # On construit le chemin final proprement
-    fichier_sortie = os.path.join(dossier_sortie, "nexus_massive_dataset.csv")
-
-    # Sauvegarde
+    fichier_sortie = "../datasets/nexus_massive_dataset.csv"
     df.to_csv(fichier_sortie, index=False, encoding='utf-8')
 
     print(f"\n✅ Terminé ! Dataset massif généré : {fichier_sortie}")
