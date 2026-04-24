@@ -20,7 +20,8 @@ def train():
 
     # On apprend à prédire le Domaine, l'Impact ET l'Urgence
     X = df['texte']
-    y = df[['domaine', 'impact', 'urgence']]
+    # FIX : On convertit tout en texte pour éviter le crash de tri de Scikit-Learn
+    y = df[['domaine', 'impact', 'urgence']].astype(str)
 
     pipeline = Pipeline([
         ('vectorizer', TextEncoder()),
