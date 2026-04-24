@@ -18,6 +18,7 @@ RF_PARAMS = {
 # --- LA MATRICE DE PRIORITÉ Urgence & Impact ---
 # Lignes (Impact) : 1=Mineur, 2=Significatif, 3=Majeur, 4=Critique
 # Colonnes (Urgence) : 1=Faible, 2=Moyenne, 3=Haute, 4=Immédiate
+
 MATRICE_PRIORITE = [
     [1.0, 2.0, 4.0, 6.0],  # Impact 1
     [2.0, 4.0, 6.0, 8.0],  # Impact 2
@@ -25,7 +26,7 @@ MATRICE_PRIORITE = [
     [6.0, 8.0, 9.5, 10.0]  # Impact 4
 ]
 
-# --- RÉFÉRENTIEL DES IMPACTS (Anatomie) ---
+# --- 1. ANCRES SÉMANTIQUES : L'IMPACT (Où est le problème ?) ---
 LOCALISATIONS = {
     "EXTRÉMITÉS": {"impact": 1, "phrases": ["saigne du doigt", "coupure à la main", "blessure au pied", "orteil cassé"]},
     "MEMBRES":    {"impact": 2, "phrases": ["fracture de la jambe", "bras cassé", "douleur au genou", "mal à l'épaule"]},
@@ -33,11 +34,26 @@ LOCALISATIONS = {
     "VITAUX":     {"impact": 4, "phrases": ["sang qui sort du coeur", "blessure au crâne", "hémorragie interne", "crise cardiaque", "poitrine"]}
 }
 
-# --- RÉFÉRENTIEL DES URGENCES (Signes Cliniques) ---
-RED_FLAGS = {
-    "choc": {"mots": ["pâle", "froid", "sueur", "soif", "faible", "marbré"], "urgence": 3},
-    "neuro": {"mots": ["vertige", "étourdi", "vomir", "nausée", "confus", "flou"], "urgence": 3},
-    "vital": {"mots": ["inconscient", "respire plus", "étouffe", "agonie", "arrêt"], "urgence": 4},
-    # NOUVEAU : Traumatismes majeurs évidents même sans mention de sang
-    "amputation": {"mots": ["coupé", "arraché", "amputé", "sectionné", "broyé", "perdu ma", "perdu mon"], "urgence": 4}
+# --- 2. ANCRES SÉMANTIQUES : L'URGENCE (Quelle est la gravité ?) ---
+# L'IA va projeter le ticket ici pour comprendre la gravité, même avec des fautes.
+URGENCES = {
+    "FAIBLE": {
+        "urgence": 1,
+        "phrases": ["petite coupure", "douleur légère", "tout va bien", "rien de grave", "légèrement enflé"]
+    },
+    "MOYENNE": {
+        "urgence": 2,
+        "phrases": ["ça saigne un peu", "douleur modérée", "j'ai mal quand je bouge", "petite fièvre"]
+    },
+    "HAUTE": {
+        "urgence": 3,
+        "phrases": ["je me sens faible", "j'ai des vertiges", "envie de vomir", "très pâle", "douleur insupportable", "saigne beaucoup"]
+    },
+    "IMMÉDIATE": {
+        "urgence": 4,
+        "phrases": ["hémorragie massive", "le sang gicle", "amputation", "jambe arrachée", "inconscient", "ne respire plus", "je perds connaissance", "sectionné"]
+    }
 }
+
+# Alertes techniques
+CRITICAL_TECH_KEYWORDS = ["explosion", "incendie", "feu", "fumée", "inondation", "catastrophe"]
