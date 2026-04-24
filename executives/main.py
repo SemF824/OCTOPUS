@@ -1,137 +1,108 @@
 # main.py
 import joblib
 import os
+import torch
 import warnings
-from nexus_core import TextEncoder # Requis pour décompresser le modèle
-from nexus_config import MODEL_PATH
+from sentence_transformers import util
+from nexus_core import TextEncoder
+from nexus_config import *  # Importation de toute la partie notation
 
-# Supprimer les alertes de version de librairies
-warnings.filterwarnings("ignore", category=UserWarning)
+# Désactivation des warnings
+warnings.filterwarnings("ignore")
+
 
 class NexusMainSystem:
     def __init__(self):
-        print("🧠 Initialisation NEXUS V8.1 PRO...")
+        print("🧠 Initialisation NEXUS V7 PRO (Notation Découplée)...")
         if not os.path.exists(MODEL_PATH):
-            print(f"❌ Le modèle {MODEL_PATH} est absent. Lancez la Forge V8.")
+            print(f"❌ {MODEL_PATH} absent. Lancez la Forge.")
             exit()
 
-        # Chargement direct du modèle global
         self.domain_model = joblib.load(MODEL_PATH)
+        self.semantic_model = self.domain_model.named_steps['vectorizer']._get_encoder()
+
+        # Préparation des ancres sémantiques à partir de la config
+        self.phrases_ancres = []
+        self.ancre_to_impact = {}
+        for zone, data in LOCALISATIONS.items():
+            for phrase in data["phrases"]:
+                self.phrases_ancres.append(phrase)
+                self.ancre_to_impact[phrase] = (zone, data["impact"])
+
+        self.ancre_embeddings = self.semantic_model.encode(self.phrases_ancres, convert_to_tensor=True)
 
     def calculer_priorite_medicale(self, texte):
         t_lower = texte.lower()
-        score = 5.0
-        raisons = ["Analyse médicale standard"]
+        raisons = []
 
-        # 1. Blessures mineures (Évite de déclencher l'urgence absolue pour un rien)
-        blessures_mineures = ["doigt", "ongle", "égratignure", "coupure", "ampoule", "petit saignement"]
-        if any(m in t_lower for m in blessures_mineures):
-            score += 1.0
-            raisons.append("Blessure périphérique mineure (+1.0)")
+        # 1. ÉVALUATION DE L'IMPACT (Axe X) via Similarité Sémantique
+        query_emb = self.semantic_model.encode(texte, convert_to_tensor=True)
+        sims = util.cos_sim(query_emb, self.ancre_embeddings)[0]
+        best_idx = torch.argmax(sims).item()
+        phrase_match = self.phrases_ancres[best_idx]
+        zone, impact_val = self.ancre_to_impact[phrase_match]
 
-        # 2. Urgences vitales réelles (On a retiré "saigne" et "sang" d'ici)
-        elif any(m in t_lower for m in
-                 ["hémorragie", "inconscient", "respire plus", "malaise", "arrêt", "coeur", "cœur", "poitrine",
-                  "étouffe"]):
-            score += 4.0
-            raisons.append("Signe d'urgence vitale (+4.0)")
+        raisons.append(f"Impact : {zone} (Niveau {impact_val}/4)")
 
-        # 3. Traumatismes classiques (C'est ici qu'on met "sang" et "saigne")
-        elif any(m in t_lower for m in
-                 ["sang", "saigne", "cassé", "fracture", "chute", "accident", "brûlure", "jambe", "bras", "nez"]):
-            score += 2.0
-            raisons.append("Traumatisme physique important (+2.0)")
+        # 2. ÉVALUATION DE L'URGENCE (Axe Y) via Analyse de Signes
+        urgence_val = 1  # Niveau de base (Faible)
 
-        # 4. Modificateurs de temps (Toujours utile)
-        if any(m in t_lower for m in ["urgent", "maintenant", "en ce moment", "en cours", "vite"]):
-            score += 2.0
-            raisons.append("Situation immédiate (+2.0)")
+        # Check Hémorragie
+        if any(k in t_lower for k in ["sang", "saigne", "hemorr", "hemero"]):
+            if any(m in t_lower for m in ["beaucoup", "gicle", "massive", "s'arrête pas"]):
+                urgence_val = max(urgence_val, 4)
+                raisons.append("Urgence : Hémorragie active (Niveau 4/4)")
+            else:
+                urgence_val = max(urgence_val, 2)
+                raisons.append("Urgence : Saignement simple (Niveau 2/4)")
 
-        return min(score, 10.0), raisons
+        # Check Red Flags Cliniques
+        for alerte, infos in RED_FLAGS.items():
+            if any(m in t_lower for m in infos["mots"]):
+                urgence_val = max(urgence_val, infos["urgence"])
+                raisons.append(f"Urgence : Signe {alerte.upper()} (Niveau {infos['urgence']}/4)")
 
-    def calculer_priorite_pompier(self, texte):
-        t_lower = texte.lower()
-        score = 5.0
-        raisons = ["Évaluation pompier standard"]
+        # 3. CROISEMENT DANS LA MATRICE (config)
+        # On soustrait 1 pour l'indexation Python (0-3)
+        score_final = MATRICE_PRIORITE[impact_val - 1][urgence_val - 1]
 
-        if any(m in t_lower for m in ["feu", "incendie", "flammes", "brûle", "fumée"]):
-            score += 4.0
-            raisons.append("Risque incendie majeur (+4.0)")
-
-        if any(m in t_lower for m in ["gaz", "explosion", "fuite"]):
-            score += 3.0
-            raisons.append("Risque d'explosion/gaz (+3.0)")
-
-        if any(m in t_lower for m in ["accident", "incarcéré", "bloqué"]):
-            score += 2.0
-            raisons.append("Sauvetage requis (+2.0)")
-
-        return min(score, 10.0), raisons
-
-    def calculer_priorite_police(self, texte):
-        t_lower = texte.lower()
-        score = 5.0
-        raisons = ["Évaluation police standard"]
-
-        if any(m in t_lower for m in ["arme", "couteau", "fusil", "braquage", "menace"]):
-            score += 4.0
-            raisons.append("Présence d'arme / Danger grave (+4.0)")
-
-        if any(m in t_lower for m in ["agression", "frappe", "violences", "conjoint"]):
-            score += 3.0
-            raisons.append("Violences sur personne (+3.0)")
-
-        if any(m in t_lower for m in ["cambriolage", "vol", "rodéo", "effraction"]):
-            score += 1.5
-            raisons.append("Atteinte aux biens / Ordre public (+1.5)")
-
-        return min(score, 10.0), raisons
+        return score_final, raisons
 
     def evaluer_ticket(self, texte):
-        # 1. Prédiction du domaine principal
+        t_lower = texte.lower()
+
+        # Sécurité : Incidents techniques majeurs (Feu/Explosion)
+        if any(k in t_lower for k in CRITICAL_TECH_KEYWORDS):
+            return "INFRA/SÉCURITÉ", 10.0, ["ALERTE CRITIQUE : Risque physique ou matériel majeur"]
+
+        # A. Classification du Domaine (IA)
         domaine = self.domain_model.predict([texte])[0]
 
-        # 2. Routage vers le bon algorithme de priorité
+        # B. Notation via la Matrice
         if domaine == "MÉDICAL":
             score, raisons = self.calculer_priorite_medicale(texte)
-        elif domaine == "POMPIER":
-            score, raisons = self.calculer_priorite_pompier(texte)
-        elif domaine == "POLICE":
-            score, raisons = self.calculer_priorite_police(texte)
         else:
-            # Traitement des tickets IT (Infra, Accès, Matériel)
-            bases = {"INFRA": 4.0, "ACCÈS": 3.0, "MATÉRIEL": 1.5}
-            score = bases.get(domaine, 2.0)
-            raisons = [f"Standard {domaine}"]
+            # Notation technique simplifiée Impact x Urgence
+            impact_map = {"INFRA": 4, "ACCÈS": 3, "RH": 2, "MATÉRIEL": 1}
+            imp_val = impact_map.get(domaine, 1)
 
-            if any(m in texte.lower() for m in ["urgent", "bloqué", "panne", "critique"]):
-                score += 3.0
-                raisons.append("Urgence technique détectée (+3.0)")
+            urg_val = 4 if any(m in t_lower for m in ["urgent", "bloqué", "panne", "mort"]) else 1
+
+            score = MATRICE_PRIORITE[imp_val - 1][urg_val - 1]
+            raisons = [f"Standard {domaine} (Imp:{imp_val}/Urg:{urg_val})"]
 
         return domaine, round(score, 1), raisons
 
 
 if __name__ == "__main__":
     system = NexusMainSystem()
-    print("\n" + "="*50)
-    print("🚀 NEXUS V8.1 - MOTEUR D'INFÉRENCE OPÉRATIONNEL")
-    print("="*50)
-    print("Tapez 'q' ou 'exit' pour quitter le programme.")
-
+    print("\n🚀 NEXUS V7 PRO - PRÊT")
     while True:
         ticket = input("\n📝 Description : ").strip()
-        if ticket.lower() in ['exit', 'q', 'quit']:
-            print("Arrêt du système NEXUS. À bientôt !")
-            break
+        if ticket.lower() == 'exit': break
 
-        if len(ticket) < 5:
-            print("⚠️ Veuillez entrer une description plus détaillée.")
-            continue
+        dom, sco, rai = system.evaluer_ticket(ticket)
+        prio = "🔴 CRITIQUE" if sco >= 8 else ("🟠 HAUTE" if sco >= 5 else "🟢 BASSE")
 
-        # Évaluation
-        domaine, score, raisons = system.evaluer_ticket(ticket)
-
-        # Affichage
-        indicateur = "🔴" if score >= 8 else "🟠" if score >= 5 else "🟢"
-        print(f"🎯 Domaine : {domaine} | 🔢 Score : {score}/10 {indicateur}")
-        print(f"💡 Analyse : {', '.join(raisons)}")
+        print(f"🎯 Domaine : {dom} | 🔢 Score : {sco}/10 -> {prio}")
+        print(f"💡 Analyse : {' | '.join(rai)}")
