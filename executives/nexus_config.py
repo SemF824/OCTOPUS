@@ -8,9 +8,9 @@ MODEL_FRICTION_PATH = "../pickle_result/nexus_v10_friction.pkl"
 CONFIDENCE_THRESHOLD = 0.45
 
 # --- DÉCLENCHEURS DE NÉGATION ---
-NEGATION_MARKERS = ["pas", "aucun", "aucune", "rien", "jamais", "plus de", "sans"]
+NEGATION_MARKERS = ["pas de", "aucun", "aucune", "rien", "jamais", "plus de", "sans", "fausse alerte", "n'a pas", "ne sont pas"]
 
-# --- SYNERGIES MULTI-FORCES ---
+# --- SYNERGIES MULTI-FORCES (Pour la génération de données) ---
 SYNERGIES_URGENCE = {
     "fusillade": ["POLICE", "MÉDICAL"],
     "tireur": ["POLICE", "MÉDICAL"],
@@ -20,6 +20,12 @@ SYNERGIES_URGENCE = {
     "suicide": ["POLICE", "MÉDICAL", "POMPIER"],
     "incendie bâtiment": ["POMPIER", "POLICE"]
 }
+
+MOTS_LIEUX = [
+    "rue", "avenue", "boulevard", "étage", "bâtiment", "parking",
+    "maison", "appartement", "route", "autoroute", "gare", "école", "magasin",
+    "mairie", "hôpital", "clinique", "centre", "place", "parc", "adresse", "ici", "chez"
+]
 
 # --- PARAMÈTRES MACHINE LEARNING ---
 RF_PARAMS = {
