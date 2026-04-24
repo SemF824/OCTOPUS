@@ -1,12 +1,16 @@
 # nexus_config.py
 
 DB_PATH = "../nexus_bionexus.db"
-MODEL_PATH = "../pickle_result/nexus_v8.1_extended.pkl"
+MODEL_PATH = "../pickle_result/nexus_v10_multilabel.pkl"
+MODEL_FRICTION_PATH = "../pickle_result/nexus_v10_friction.pkl"
 
 # --- PARAMÈTRES AUTO-QUALIFICATION ---
 CONFIDENCE_THRESHOLD = 0.45
 
-# --- DÉCLENCHEURS MULTI-FORCES (SYNERGIES) ---
+# --- DÉCLENCHEURS DE NÉGATION ---
+NEGATION_MARKERS = ["pas", "aucun", "aucune", "rien", "jamais", "plus de", "sans"]
+
+# --- SYNERGIES MULTI-FORCES ---
 SYNERGIES_URGENCE = {
     "fusillade": ["POLICE", "MÉDICAL"],
     "tireur": ["POLICE", "MÉDICAL"],
@@ -17,14 +21,7 @@ SYNERGIES_URGENCE = {
     "incendie bâtiment": ["POMPIER", "POLICE"]
 }
 
-# --- LEXIQUE DE LOCALISATION (Élargi pour éviter les blocages) ---
-MOTS_LIEUX = [
-    "rue", "avenue", "boulevard", "étage", "bâtiment", "parking",
-    "maison", "appartement", "route", "autoroute", "gare", "école", "magasin",
-    "mairie", "hôpital", "clinique", "centre", "place", "parc", "adresse", "ici", "chez"
-]
-
-# --- PARAMÈTRES RANDOM FOREST ---
+# --- PARAMÈTRES MACHINE LEARNING ---
 RF_PARAMS = {
     'n_estimators' : 350,
     'max_depth'    : 30,
