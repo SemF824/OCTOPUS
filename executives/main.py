@@ -66,7 +66,7 @@ class NexusMainSystem:
     def evaluer_ticket(self, texte):
         t_lower = texte.lower()
 
-        # Alerte Technique Critique
+        # Alerte Technique Critique-
         if any(k in t_lower for k in CRITICAL_TECH_KEYWORDS):
             return "INFRA/SÉCURITÉ", 10.0, ["ALERTE CRITIQUE : Risque physique ou matériel"]
 
