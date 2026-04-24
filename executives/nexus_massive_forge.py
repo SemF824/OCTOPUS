@@ -2,164 +2,123 @@
 import sqlite3
 import pandas as pd
 import random
-import itertools
 import os
 from nexus_config import DB_PATH
 
-print("🚀 INITIALISATION DU GÉNÉRATEUR MASSIF NEXUS (Objectif : 600 000 tickets)...")
+print("🚀 INITIALISATION DU GÉNÉRATEUR V15 ULTRA-DIVERSE (Objectif : 600 000+ tickets uniques)...")
 
-# ==========================================
-# 1. LES BRIQUES DE LANGAGE (RÉALISTES)
-# ==========================================
+# --- DICTIONNAIRES GIGA-EXTENSIFS ---
+EMOTIONS = ["", "Au secours ! ", "Aidez-moi vite ! ", "Je panique, ", "C'est urgent, ", "S'il vous plaît, ",
+            "Venez vite, ", "Je suis terrifié, ", "Hé ho, ", "C'est la catastrophe, "]
+RUES = ["Victor Hugo", "de la République", "Jean Jaurès", "Pasteur", "des Fleurs", "de la Gare", "du Port",
+        "Main Street", "des Lilas", "du Château", "de Paris", "de Lyon", "de Marseille", "des Alpes", "du Mistral",
+        "de l'Avenir", "du Soleil", "Verdun", "Gambetta", "Leclerc", "Foch", "de l'Europe", "Bellevue", "des Roses"]
+PRENOMS = ["Jean", "Marie", "Kevin", "Sarah", "Lucas", "Léa", "Thomas", "Chloé", "Nicolas", "Emma", "Julien", "Inès",
+           "Hugo", "Camille", "Antoine", "Manon", "Paul", "Clara", "Mathieu", "Zoé"]
+NOMS = ["Martin", "Bernard", "Dubois", "Thomas", "Robert", "Richard", "Petit", "Durand", "Leroy", "Moreau", "Simon",
+        "Laurent", "Lefebvre", "Michel", "Garcia"]
+DEPARTEMENTS = ["Compta", "RH", "IT", "Marketing", "Logistique", "Ventes", "Direction", "Accueil", "Sécurité",
+                "Support"]
+TEMPS = ["à l'instant", "il y a 2 minutes", "en ce moment", "depuis 10 minutes", "ça vient d'arriver", "juste là",
+         "immédiatement"]
 
-EMOTIONS = [
-    "", "Au secours, ", "Aidez-moi, ", "Vite ! ", "Je vous en supplie, ",
-    "C'est urgent, ", "Je panique, ", "S'il vous plaît, ", "Putain venez vite, "
-]
-
-LIEUX_DOMICILE = ["chez moi", "dans mon appartement", "dans ma maison", "dans mon jardin", "sur mon palier"]
-LIEUX_PUBLIC = ["dans la rue", "devant la gare", "sur le parking", "au centre commercial", "dans le métro"]
-
-# --- MÉDICAL ---
-MED_SUJETS = ["Je", "Ma femme", "Mon mari", "Mon enfant", "Un passant"]
+# --- 1. MÉDICAL (150 000) ---
 MED_ACTIONS = [
-    ("ai mal à la tête", 2, 2), ("ai le nez cassé", 2, 2),
-    ("ai la jambe arrachée", 4, 4), ("ai une douleur au coeur", 4, 4),
-    ("me suis coupé le doigt", 1, 1), ("ai une grosse entaille au bras", 3, 3),
-    ("ai fait une chute dans les escaliers", 3, 3), ("ne sens plus mes jambes", 4, 4)
-]
-MED_SYMPTOMES = [
-    ("", 0, 0), (" et je saigne", 1, 1), (" et ça pisse le sang", 2, 2),
-    (" et j'ai des vertiges", 1, 1), (" et je vais m'évanouir", 2, 2),
-    (" et je n'arrive plus à respirer", 2, 2)
+    ("a une douleur thoracique", 4, 4), ("est tombé et ne bouge plus", 3, 4),
+    ("saigne énormément", 4, 4), ("est en train de s'étouffer", 4, 4),
+    ("a une forte fièvre", 2, 3), ("a mal au ventre", 1, 2),
+    ("s'est cassé le bras", 2, 3), ("a fait une réaction allergique", 3, 4),
+    ("a perdu connaissance", 4, 4), ("a une coupure au visage", 2, 2),
+    ("semble faire un AVC", 4, 4), ("a une entorse sévère", 1, 2)
 ]
 
-# --- POLICE ---
+
+def gen_med():
+    return (
+        f"{random.choice(EMOTIONS)}{random.choice(['Mon fils', 'Mon mari', 'Ma femme', 'Moi', 'Un ami'])} ({random.choice(PRENOMS)} {random.choice(NOMS)}, {random.randint(1, 95)} ans) {random.choice(MED_ACTIONS)[0]} au {random.randint(1, 999)} rue {random.choice(RUES)} {random.choice(TEMPS)}",
+        "MÉDICAL", *random.choice(MED_ACTIONS)[1:])
+
+
+# --- 2. POLICE (150 000) ---
 POL_ACTIONS = [
-    ("quelqu'un s'est introduit", 3, 3), ("on a forcé ma porte", 3, 3),
-    ("des gens se battent", 2, 3), ("on m'a volé mon téléphone", 2, 2),
-    ("il y a un rodéo urbain", 2, 2), ("on m'a tiré dessus", 4, 4),
-    ("je suis suivi par un homme", 3, 3), ("mon conjoint me frappe", 4, 4)
-]
-POL_ARMES = [
-    ("", 0, 0), (" avec un couteau", 1, 1), (" il est armé", 1, 1),
-    (" ils ont des fusils", 1, 1), (" et il menace de me tuer", 1, 1)
+    ("braquage en cours", 4, 4), ("agression physique", 3, 4),
+    ("cambriolage", 2, 3), ("individu suspect", 1, 2),
+    ("violences conjugales", 4, 4), ("vol à la tire", 2, 2),
+    ("menace de mort", 3, 4), ("intrusion illégale", 3, 3)
 ]
 
-# --- POMPIER ---
+
+def gen_pol():
+    act = random.choice(POL_ACTIONS)
+    arme = random.choice(
+        ["", " avec un couteau", " il est armé", " ils ont des pistolets", " avec une batte", " sans arme visible"])
+    return (
+        f"{random.choice(EMOTIONS)}{act[0]} au {random.randint(1, 999)} rue {random.choice(RUES)}{arme} {random.choice(TEMPS)}",
+        "POLICE", act[1], act[2])
+
+
+# --- 3. POMPIER (100 000) ---
 POM_ACTIONS = [
-    ("il y a le feu", 4, 4), ("ça sent le gaz", 3, 4),
-    ("un immeuble s'est effondré", 4, 4), ("gros accident de voiture", 3, 4),
-    ("ma cave est inondée", 2, 2), ("il y a une explosion", 4, 4)
-]
-POM_DETAILS = [
-    ("", 0, 0), (" avec beaucoup de fumée", 1, 0), (" des gens sont coincés", 0, 1),
-    (" le feu se propage vite", 1, 1)
+    ("incendie d'appartement", 4, 4), ("odeur de gaz suspecte", 3, 4),
+    ("accident de voiture", 3, 4), ("départ de feu", 2, 3),
+    ("inondation massive", 2, 2), ("explosion", 4, 4),
+    ("fumée épaisse", 2, 3), ("ascenseur bloqué", 1, 2)
 ]
 
-# --- INFRA / MATÉRIEL / ACCÈS (Simplifiés pour l'exemple) ---
-TECH_ACTIONS = [
-    ("mon PC", "MATÉRIEL", 1, 1), ("l'imprimante", "MATÉRIEL", 1, 1),
-    ("le serveur principal", "INFRA", 4, 4), ("le réseau wifi", "INFRA", 3, 2),
-    ("mon mot de passe", "ACCÈS", 2, 2), ("le VPN", "ACCÈS", 3, 2)
+
+def gen_pom():
+    act = random.choice(POM_ACTIONS)
+    details = random.choice(["", " au 2ème étage", " dans le garage", " des gens crient", " ça brûle vite"])
+    return (f"{random.choice(EMOTIONS)}{act[0]} au {random.randint(1, 999)} rue {random.choice(RUES)}{details}",
+            "POMPIER", act[1], act[2])
+
+
+# --- 4. TECHNIQUES (300 000) ---
+# On multiplie les variables pour éviter les doublons techniques
+TECH_OBJETS = [
+    ("serveur", "INFRA", 4, 4), ("ordinateur", "MATÉRIEL", 1, 1),
+    ("routeur", "INFRA", 3, 2), ("session", "ACCÈS", 2, 2),
+    ("VPN", "ACCÈS", 3, 3), ("imprimante", "MATÉRIEL", 1, 2),
+    ("base de données", "INFRA", 4, 3), ("compte mail", "ACCÈS", 2, 2)
 ]
-TECH_PANNES = [" ne marche plus", " est en panne", " a explosé", " affiche une erreur", " est bloqué"]
 
 
-# ==========================================
-# 2. MOTEUR DE GÉNÉRATION
-# ==========================================
+def gen_tech():
+    obj, dom, imp, urg = random.choice(TECH_OBJETS)
+    err = f"code {random.randint(100, 999)}" if random.random() > 0.5 else f"erreur {random.choice(['système', 'fatale', 'inconnue', 'réseau'])}"
+    return (
+        f"Bonjour, {obj} du service {random.choice(DEPARTEMENTS)} {random.choice(['bloqué', 'HS', 'en panne', 'ne répond plus'])} ({err}) au bureau {random.randint(1, 999)}",
+        dom, imp, urg)
 
-def generer_tickets():
+
+# --- BOUCLE DE GÉNÉRATION ---
+def run_massive_forge_v15():
     dataset = []
+    print("⏳ Création des 600 000 tickets...")
 
-    print("⏳ Génération des 100 000 tickets MÉDICAL...")
-    while len(dataset) < 100000:
-        emo = random.choice(EMOTIONS)
-        suj = random.choice(MED_SUJETS)
-        act, i1, u1 = random.choice(MED_ACTIONS)
-        sym, i2, u2 = random.choice(MED_SYMPTOMES)
+    tasks = [(gen_med, 150000), (gen_pol, 150000), (gen_pom, 100000), (gen_tech, 300000)]
 
-        texte = f"{emo}{suj.lower() if emo else suj} {act}{sym}".strip()
-        # Plafonner l'impact et l'urgence à 4
-        imp = min(4, i1 + i2)
-        urg = min(4, u1 + u2)
-        dataset.append((texte, "MÉDICAL", imp, urg))
+    for func, count in tasks:
+        print(f"   -> Génération {count} tickets...")
+        for _ in range(count):
+            dataset.append(func())
 
-    print("⏳ Génération des 100 000 tickets POLICE...")
-    count_police = 0
-    while count_police < 100000:
-        emo = random.choice(EMOTIONS)
-        lieu = random.choice(LIEUX_DOMICILE + LIEUX_PUBLIC)
-        act, i1, u1 = random.choice(POL_ACTIONS)
-        arme, i2, u2 = random.choice(POL_ARMES)
+    df = pd.DataFrame(dataset, columns=["texte", "domaine", "impact", "urgence"])
 
-        texte = f"{emo}{act} {lieu}{arme}".strip()
-        imp = min(4, i1 + i2)
-        urg = min(4, u1 + u2)
-        dataset.append((texte, "POLICE", imp, urg))
-        count_police += 1
+    print("🧹 Suppression des doublons...")
+    df = df.drop_duplicates(subset=['texte'])
 
-    print("⏳ Génération des 100 000 tickets POMPIER...")
-    count_pompier = 0
-    while count_pompier < 100000:
-        emo = random.choice(EMOTIONS)
-        lieu = random.choice(LIEUX_DOMICILE + LIEUX_PUBLIC)
-        act, i1, u1 = random.choice(POM_ACTIONS)
-        det, i2, u2 = random.choice(POM_DETAILS)
+    final_count = len(df)
+    print(f"✅ Forge V15 terminée : {final_count} tickets UNIQUES générés.")
 
-        texte = f"{emo}{act} {lieu}{det}".strip()
-        imp = min(4, i1 + i2)
-        urg = min(4, u1 + u2)
-        dataset.append((texte, "POMPIER", imp, urg))
-        count_pompier += 1
+    # Sauvegarde
+    os.makedirs("../datasets", exist_ok=True)
+    df.to_csv("../datasets/nexus_massive_dataset.csv", index=False)
 
-    print("⏳ Génération des 300 000 tickets TECHNIQUES (Infra, Matériel, Accès)...")
-    count_tech = 0
-    while count_tech < 300000:
-        emo = random.choice(["", "Urgent, ", "Bonjour, "])
-        sujet, dom, i1, u1 = random.choice(TECH_ACTIONS)
-        panne = random.choice(TECH_PANNES)
-
-        texte = f"{emo}{sujet}{panne}".strip()
-        dataset.append((texte, dom, i1, u1))
-        count_tech += 1
-
-    return pd.DataFrame(dataset, columns=["texte", "domaine", "impact", "urgence"])
+    with sqlite3.connect(DB_PATH) as conn:
+        df.to_sql("tickets_domaines", conn, if_exists="replace", index=False)
+    print(f"💾 Base SQLite {DB_PATH} mise à jour.")
 
 
-# ==========================================
-# 3. EXÉCUTION ET SAUVEGARDE
-# ==========================================
-df_massif = generer_tickets()
-
-# Mélange aléatoire de toutes les lignes
-df_massif = df_massif.sample(frac=1, random_state=42).reset_index(drop=True)
-
-# Sauvegarde en CSV pour consultation
-chemin_csv = "../datasets/nexus_massive_dataset.csv"
-os.makedirs("../datasets", exist_ok=True)
-df_massif.to_csv(chemin_csv, index=False)
-print(f"✅ Fichier CSV généré avec succès : {chemin_csv} ({len(df_massif)} lignes)")
-
-# Injection dans la base de données SQLite pour l'entraînement
-print("💾 Injection dans la base de données SQLite...")
-with sqlite3.connect(DB_PATH) as conn:
-    df_massif.to_sql("tickets_domaines", conn, if_exists="replace", index=False)
-
-# Création d'une table friction minimale pour que la V12 continue de fonctionner
-print("⚖️ Génération de la table Friction...")
-friction_data = []
-# On prend 10000 tickets au hasard pour la friction
-for _, row in df_massif.head(10000).iterrows():
-    mots = row['texte'].split()
-    if len(mots) > 4:
-        v1 = " ".join(mots[:len(mots) // 2])
-        friction_data.append((v1, "DEMANDE_DETAILS_GENERAUX"))
-        friction_data.append((row['texte'], "COMPLET"))
-
-df_friction = pd.DataFrame(friction_data, columns=["texte", "label"]).drop_duplicates()
-with sqlite3.connect(DB_PATH) as conn:
-    df_friction.to_sql("tickets_friction", conn, if_exists="replace", index=False)
-
-print(f"🎉 OPÉRATION TERMINÉE. Base de données prête pour l'entraînement !")
+if __name__ == "__main__":
+    run_massive_forge_v15()
