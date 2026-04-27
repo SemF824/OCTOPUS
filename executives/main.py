@@ -43,13 +43,15 @@ class ShadowLogger:
 class NegationGuard:
     def contient_negation(self, texte, mots_sensibles):
         t = texte.lower()
-        # CORRECTION DU BUG "FILM" : Si on détecte un danger vital proche, on annule le filtre fiction
-        urgences_reelles = ["incendie", "feu", "attaque", "blessé", "sang"]
 
-        if any(f in t for f in FICTION_MARKERS):
-            if not any(u in t for u in urgences_reelles):
+        # 1. Filtre Pop-Culture étendu
+        mots_fiction_etendus = FICTION_MARKERS + ["titan", "zombie", "alien", "vampire", "monstre"]
+        if any(f in t for f in mots_fiction_etendus):
+            # Exception : Si on parle d'un cinéma en feu, c'est grave. Sinon, c'est de la fiction.
+            if not ("cinéma" in t and ("incendie" in t or "feu" in t)):
                 return True, "Contexte de fiction, manga ou fausse alerte détecté."
 
+        # 2. Détection de négation
         mots_texte = t.split()
         for i, mot in enumerate(mots_texte):
             for sensible in mots_sensibles:
@@ -62,13 +64,13 @@ class NegationGuard:
 
 class NexusMainSystem:
     def __init__(self):
-        print("🧠 Initialisation NEXUS V12 UNIFIÉE (Shadow Logger Activé)...")
+        print("🧠 Initialisation NEXUS V12 UNIFIÉE (Version Finale Corrigée)...")
         self.model_unified = joblib.load(MODEL_PATH)
         self.model_friction = joblib.load(MODEL_FRICTION_PATH)
         self.guard = NegationGuard()
         self.logger = ShadowLogger()
 
-    def evaluer_ticket(self, texte_original):
+    def evaluer_ticket(self, texte_original, force_score=False):
         # 1. Analyse Unifiée
         pred_uni = self.model_unified.predict([texte_original])[0]
         domaine = pred_uni[0]
@@ -77,7 +79,6 @@ class NexusMainSystem:
 
         probas = self.model_unified.predict_proba([texte_original])
         confiance = max(probas[0][0]) if len(probas) > 0 else 0.5
-        score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 0.0
 
         # 2. Garde de sécurité (Négation et Fiction)
         is_negated, raison = self.guard.contient_negation(texte_original, ["arme", "feu", "urgence"])
@@ -85,38 +86,50 @@ class NexusMainSystem:
             return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, domaine, impact, urgence, confiance
 
         # 3. L'EMPATHIE DYNAMIQUE (Friction)
-        statut_friction = self.model_friction.predict([texte_original])[0]
+        # On ne pose la question QUE si le script ne force pas la note finale
+        if not force_score:
+            statut_friction = self.model_friction.predict([texte_original])[0]
+            if statut_friction != "COMPLET":
+                import random
+                amorce = f"Je vois qu'il s'agit potentiellement d'un cas pour le service {domaine}."
 
-        if statut_friction != "COMPLET":
-            import random
+                # Ces questions précises marcheront DÈS QUE les fichiers Kaggle seront installés
+                if statut_friction == "PRECISION_MED":
+                    questions = ["Où avez-vous mal exactement ?", "La personne est-elle consciente ?"]
+                elif statut_friction == "PRECISION_POL":
+                    questions = ["Y a-t-il des armes visibles ?", "Où se passe l'incident exactement ?"]
+                elif statut_friction == "PRECISION_POMP":
+                    questions = ["Y a-t-il des personnes coincées à l'intérieur ?", "Y a-t-il des flammes ?"]
+                elif "TECH" in statut_friction or domaine in ["INFRA", "MATÉRIEL", "ACCÈS"]:
+                    questions = ["Quel est le message d'erreur affiché ?", "Quel équipement précis est concerné ?"]
+                else:
+                    # Le texte de secours (pour ton vieux modèle actuel)
+                    questions = ["Pouvez-vous m'en dire un peu plus (localisation, symptômes, détails) ?"]
 
-            # Assemblage de la réponse
-            amorce = f"Je vois qu'il s'agit potentiellement d'un cas pour le service {domaine}."
+                question_choisie = random.choice(questions)
+                return domaine, 0, [f"{amorce} {question_choisie}"], False, domaine, impact, urgence, confiance
 
-            # Sélection de la question ciblée selon le label détecté
-            if statut_friction == "PRECISION_MED":
-                questions = ["Quels sont les symptômes exacts ?", "Où la personne a-t-elle mal ?",
-                             "La personne est-elle consciente ?"]
-            elif statut_friction == "PRECISION_POL":
-                questions = ["Y a-t-il des armes visibles ?", "Combien d'individus sont impliqués ?",
-                             "Où se passe l'incident exactement ?"]
-            elif statut_friction == "PRECISION_POMP":
-                questions = ["Y a-t-il des flammes ou seulement de la fumée ?",
-                             "Y a-t-il des personnes coincées à l'intérieur ?"]
-            elif statut_friction == "PRECISION_TECH":
-                questions = ["Quel est le message d'erreur affiché à l'écran ?",
-                             "Quel équipement spécifique est concerné ?"]
-            else:
-                questions = ["Pouvez-vous m'en dire un peu plus pour que je puisse qualifier l'urgence ?"]
+        # 4. SYNERGIES & CALCUL DU SCORE FINAL
+        domaines_assignes = [domaine]
+        texte_lower = texte_original.lower()
+        for mot_cle, services in SYNERGIES_URGENCE.items():
+            if mot_cle in texte_lower:
+                for s in services:
+                    if s not in domaines_assignes:
+                        domaines_assignes.append(s)
 
-            question_choisie = random.choice(questions)
-            reponse_assemblee = f"{amorce} {question_choisie}"
-
-            return domaine, 0, [reponse_assemblee], False, domaine, impact, urgence, confiance
-
-        # 4. Si le ticket est complet, on sort les scores
+        score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 1.0
         raisons = [f"Impact IA: {impact}/4", f"Urgence IA: {urgence}/4", f"Confiance: {confiance:.1%}"]
-        return domaine, score, raisons, True, domaine, impact, urgence, confiance
+
+        # Si l'IA détecte plusieurs services, on booste le score !
+        if len(domaines_assignes) > 1:
+            score = max(score, 9.5)
+            raisons.insert(0, f"⚠️ SYNERGIE DÉTECTÉE : Intervention {', '.join(domaines_assignes)}")
+            domaine_final = " + ".join(domaines_assignes)
+        else:
+            domaine_final = domaine
+
+        return domaine_final, score, raisons, True, domaine, impact, urgence, confiance
 
 
 if __name__ == "__main__":
@@ -130,32 +143,34 @@ if __name__ == "__main__":
         if not ticket or ticket.lower() in ['exit', 'q', 'quit']: break
 
         ticket_complet = False
-        tentatives_friction = 0  # <-- L'ANTI-BOUCLE EST LÀ
+        tentatives_friction = 0
         ticket_final = ticket
 
-        while not ticket_complet and tentatives_friction < 1:
+        # L'IA a le droit de poser 2 questions maximum pour ne pas agacer le client
+        while not ticket_complet and tentatives_friction < 2:
             domaine, score, raisons, ticket_complet, dom_brut, imp_brut, urg_brut, conf = nexus.evaluer_ticket(
-                ticket_final)
+                ticket_final, force_score=False)
 
             if not ticket_complet:
                 print(f"🎯 Domaine pressenti : {domaine} (Analyse en pause)")
                 print(f"🛑 AUTO-QUALIFICATION : {raisons[0]}")
                 complement = input("💬 Précisez SVP : ").strip()
                 if complement.lower() in ['exit', 'q', 'quit']: break
-                ticket_final = ticket_final + " . " + complement
+                ticket_final = ticket_final + ". " + complement
                 tentatives_friction += 1
-                # À la prochaine boucle, tentatives_friction = 1, ça force le calcul final
 
-        # Forcer le calcul final si l'anti-boucle a été déclenché
+        if ticket_final.lower() in ['exit', 'q', 'quit']: break
+
+        # LE CORRECTIF DU "0/10" EST ICI : On force le calcul des scores finaux !
         if not ticket_complet:
-            domaine, score, raisons, _, dom_brut, imp_brut, urg_brut, conf = nexus.evaluer_ticket(ticket_final)
-            ticket_complet = True
+            domaine, score, raisons, ticket_complet, dom_brut, imp_brut, urg_brut, conf = nexus.evaluer_ticket(
+                ticket_final, force_score=True)
 
-        if ticket_final.lower() not in ['exit', 'q', 'quit']:
-            niveau = "🔴 CRITIQUE" if score >= 8 else "🟠 HAUTE" if score >= 5 else "🟢 BASSE"
-            print(f"\n✅ TICKET QUALIFIÉ !")
-            print(f"🎯 {domaine} | 🔢 {score}/10 -> {niveau}")
-            print(f"💡 {raisons[0]}")
+        niveau = "🔴 CRITIQUE" if score >= 8 else "🟠 HAUTE" if score >= 5 else "🟢 BASSE"
+        print(f"\n✅ TICKET QUALIFIÉ !")
+        print(f"🎯 {domaine} | 🔢 {score}/10 -> {niveau}")
+        for r in raisons:
+            print(f"💡 {r}")
 
-            # --- LOGGING SILENCIEUX ---
-            nexus.logger.log(ticket, ticket_final, dom_brut, imp_brut, urg_brut, conf)
+        # Logging fantôme pour l'apprentissage futur
+        nexus.logger.log(ticket, ticket_final, dom_brut, imp_brut, urg_brut, conf)
