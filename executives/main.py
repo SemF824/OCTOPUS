@@ -69,28 +69,52 @@ class NexusMainSystem:
         self.logger = ShadowLogger()
 
     def evaluer_ticket(self, texte_original):
-        # ... (Garde ta logique de base de prédiction unifiée ici) ...
+        # 1. Analyse Unifiée
         pred_uni = self.model_unified.predict([texte_original])[0]
         domaine = pred_uni[0]
         impact = int(pred_uni[1])
         urgence = int(pred_uni[2])
 
-        # Simulation de probabilité (RandomForest renvoie des probas par arbre)
         probas = self.model_unified.predict_proba([texte_original])
         confiance = max(probas[0][0]) if len(probas) > 0 else 0.5
+        score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 0.0
 
-        score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 1.0
-
+        # 2. Garde de sécurité (Négation et Fiction)
         is_negated, raison = self.guard.contient_negation(texte_original, ["arme", "feu", "urgence"])
         if is_negated:
             return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, domaine, impact, urgence, confiance
 
-        # Évaluation Friction
+        # 3. L'EMPATHIE DYNAMIQUE (Friction)
         statut_friction = self.model_friction.predict([texte_original])[0]
-        if statut_friction != "COMPLET":
-            return domaine, 0, [
-                "Votre message est très court ou manque de détails."], False, domaine, impact, urgence, confiance
 
+        if statut_friction != "COMPLET":
+            import random
+
+            # Assemblage de la réponse
+            amorce = f"Je vois qu'il s'agit potentiellement d'un cas pour le service {domaine}."
+
+            # Sélection de la question ciblée selon le label détecté
+            if statut_friction == "PRECISION_MED":
+                questions = ["Quels sont les symptômes exacts ?", "Où la personne a-t-elle mal ?",
+                             "La personne est-elle consciente ?"]
+            elif statut_friction == "PRECISION_POL":
+                questions = ["Y a-t-il des armes visibles ?", "Combien d'individus sont impliqués ?",
+                             "Où se passe l'incident exactement ?"]
+            elif statut_friction == "PRECISION_POMP":
+                questions = ["Y a-t-il des flammes ou seulement de la fumée ?",
+                             "Y a-t-il des personnes coincées à l'intérieur ?"]
+            elif statut_friction == "PRECISION_TECH":
+                questions = ["Quel est le message d'erreur affiché à l'écran ?",
+                             "Quel équipement spécifique est concerné ?"]
+            else:
+                questions = ["Pouvez-vous m'en dire un peu plus pour que je puisse qualifier l'urgence ?"]
+
+            question_choisie = random.choice(questions)
+            reponse_assemblee = f"{amorce} {question_choisie}"
+
+            return domaine, 0, [reponse_assemblee], False, domaine, impact, urgence, confiance
+
+        # 4. Si le ticket est complet, on sort les scores
         raisons = [f"Impact IA: {impact}/4", f"Urgence IA: {urgence}/4", f"Confiance: {confiance:.1%}"]
         return domaine, score, raisons, True, domaine, impact, urgence, confiance
 
