@@ -24,14 +24,25 @@ from sklearn.multioutput import MultiOutputClassifier
 warnings.filterwarnings("ignore")
 
 # --- CHEMINS ---
+# --- CHEMINS DYNAMIQUES ---
+import os, sys
+
+# 1. On trouve automatiquement le dossier où se trouve ce script (nexus-ghali)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 KAGGLE_WORKING   = "/kaggle/working"
-CSV_FOLDER       = "/kaggle/input/nexus-datasets"   # ← adapter si besoin
-EXEC_FOLDER      = "/kaggle/input/nexus-ghali/executives"
+# Si tes CSV sont dans le dossier 'datasets' de ton Git, on l'associe automatiquement :
+CSV_FOLDER       = os.path.join(BASE_DIR, "datasets")
+# On pointe dynamiquement vers le dossier executives
+EXEC_FOLDER      = os.path.join(BASE_DIR, "executives")
+
 DB_PATH          = f"{KAGGLE_WORKING}/nexus_bionexus.db"
 MODEL_PATH       = f"{KAGGLE_WORKING}/pickle_result/nexus_v21_unified.pkl"
 MODEL_FRIC_PATH  = f"{KAGGLE_WORKING}/pickle_result/nexus_v21_friction.pkl"
 
 os.makedirs(f"{KAGGLE_WORKING}/pickle_result", exist_ok=True)
+
+# Ajout au path pour trouver nexus_core
 sys.path.append(EXEC_FOLDER)
 from nexus_core import TextEncoder
 
