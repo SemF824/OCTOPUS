@@ -3,6 +3,7 @@
 #   1. Bug affichage "📝 Ticket : 📝 Ticket :" — supprimé
 #   2. LocationGuard — reconnaît maintenant les lieux nommés (via MOTS_LIEUX dans nexus_config)
 #   3. NegationGuard — détecte les métaphores idiomatiques (via FICTION_MARKERS étendu)
+#   4. Garde-fou Anti-Hypocondrie intégré avec nettoyage des accents
 
 import joblib
 import os
@@ -10,6 +11,7 @@ import sqlite3
 import warnings
 import datetime
 import random
+import unicodedata
 
 from nexus_core import TextEncoder
 from nexus_config import (
@@ -19,6 +21,14 @@ from nexus_config import (
 )
 
 warnings.filterwarnings("ignore")
+
+# ==============================================================================
+# FONCTION DE NETTOYAGE
+# ==============================================================================
+
+def enlever_accents(texte):
+    """Enlève les accents pour normaliser le texte (ex: métro -> metro)"""
+    return ''.join(c for c in unicodedata.normalize('NFD', texte) if unicodedata.category(c) != 'Mn').lower()
 
 
 # ==============================================================================
@@ -65,24 +75,23 @@ class NegationGuard:
     """
 
     def contient_negation(self, texte, mots_sensibles):
-        t = texte.lower()
+        t = enlever_accents(texte)
 
         # 1. Exercice / simulation
-        mots_exercices = ["exercice", "test", "simulation", "entraînement"]
+        mots_exercices = ["exercice", "test", "simulation", "entrainement"]
         if any(ex in t for ex in mots_exercices):
             return True, "Ceci est un exercice ou un test. Procédures d'urgence réelles annulées."
 
         # 2. Fiction étendue — inclut maintenant les métaphores idiomatiques
-        #    (FICTION_MARKERS est importé depuis nexus_config, déjà enrichi)
         if any(f in t for f in FICTION_MARKERS):
             # Exception : "cinéma en feu" → vrai incendie même si le mot "film" est présent
-            if "cinéma" in t and ("incendie" in t or "feu" in t or "brûle" in t):
+            if "cinema" in t and ("incendie" in t or "feu" in t or "brule" in t):
                 pass  # on laisse passer
             else:
                 return True, "Contexte de fiction, simulation ou expression idiomatique détecté."
 
-        # 3. Négation autour des mots sensibles
-        mots_texte = t.split()
+        # 3. Négation autour des mots sensibles (Ajout de .replace pour séparer l'apostrophe)
+        mots_texte = t.replace("'", " ' ").split()
         for i, mot in enumerate(mots_texte):
             for sensible in mots_sensibles:
                 if sensible[:3] in mot:
@@ -104,7 +113,7 @@ class LocationGuard:
     """
 
     def a_une_localisation(self, texte: str) -> bool:
-        t = texte.lower()
+        t = enlever_accents(texte)
         return any(lieu in t for lieu in MOTS_LIEUX)
 
 
@@ -157,6 +166,19 @@ class NexusMainSystem:
                     ["🚨 LOCALISATION MANQUANTE : À quelle adresse ou lieu exact se déroule l'incident ?"],
                     False, domaine, impact, urgence, confiance,
                 )
+
+        # ── 2.5 L'ANTI-HYPOCONDRIE (Garde-fou Sémantique) ────────────
+        texte_propre = enlever_accents(texte_original)
+        mots_benins = ["ecorche", "ecorchure", "renseignement", "entorse", "panne", "casse", "baton", "rien", "va bien", "ras", "pas grave", "juste", "ordinateur", "telephone"]
+        mots_graves = ["sang", "saign", "arme", "couteau", "feu", "incendie", "brul", "mort", "arret", "respire", "viol", "bombe", "explos", "otage", "fusill", "braquage", "overdose"]
+
+        ajustements_raisons = []
+        if any(mb in texte_propre for mb in mots_benins) and not any(mg in texte_propre for mg in mots_graves):
+            impact, urgence = 1, 1
+            ajustements_raisons.append("🛡️ AJUSTEMENT : Situation bénigne détectée, urgence rétrogradée.")
+        elif confiance < 0.40 and not any(mg in texte_propre for mg in mots_graves):
+            impact, urgence = min(impact, 2), min(urgence, 2)
+            ajustements_raisons.append("📉 AJUSTEMENT : Confiance IA trop faible pour déclarer une crise majeure.")
 
         # ── 3. Friction ML (questions de précision) ──────────────────
         if not force_score:
@@ -220,6 +242,7 @@ class NexusMainSystem:
             f"Urgence IA : {urgence}/4",
             f"Confiance  : {confiance:.1%}",
         ]
+        raisons.extend(ajustements_raisons) # Intégration propre des raisons du garde-fou
 
         if len(domaines_assignes) > 1:
             score = max(score, 9.5)
