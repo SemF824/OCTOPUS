@@ -40,7 +40,6 @@ MOTS_CORPS = [
     "bassin", "hanche", "hanches", "jambe", "jambes", "genou", "genoux", "cheville", "chevilles", "pied", "pieds", "orteil", "orteils"
 ]
 
-# NOUVEAU : Parties du corps où une blessure est toujours "Haute" priorité
 CORPS_SENSIBLES = ["tete", "crane", "visage", "oeil", "yeux", "cou", "nuque", "gorge", "colonne", "poitrine", "thorax", "coeur", "ventre", "estomac", "abdomen"]
 
 SYMPTOMES_GLOBAUX = [
@@ -54,7 +53,6 @@ SYMPTOMES_GLOBAUX = [
     "fatigue", "epuise", "faiblesse", "tombe", "froid", "chaud", "brule partout", "mal partout", "fracture", "casse"
 ]
 
-# NOUVEAU : Symptômes qui ne sont pas mortels dans la minute, mais méritent une "Haute" priorité (Escalade)
 SYMPTOMES_SEVERES = ["epilepsie", "convulsion", "convulsions", "fracture", "casse", "allergie", "gonfle", "brulure", "brule", "hemorragie"]
 
 MOTS_GRAVES = [
@@ -69,7 +67,22 @@ MOTS_BENINS = [
     "rhume", "toux", "bleu", "bosse", "egratignure", "ampoule", "perdu"
 ]
 
-# NOUVEAU : Mots pour détecter si l'utilisateur a donné son entreprise/site IT
+# --- NOUVEAU : VOCABULAIRE DES AUTRES DOMAINES POUR L'AUTO-CORRECTEUR ---
+MOTS_DELITS = [
+    "vol", "vols", "cambriolage", "cambriolages", "effraction", "effractions",
+    "agression", "agressions", "bagarre", "bagarres", "menace", "menaces", "harcelement", "meurtre", "meurtres"
+]
+
+MOTS_SINISTRES = [
+    "fumee", "fumees", "fuite", "fuites", "gaz", "eau", "inondation", "inondations",
+    "effondrement", "eboulement", "accident", "accidents", "catastrophe"
+]
+
+MOTS_IT = [
+    "serveur", "serveurs", "reseau", "reseaux", "connexion", "piratage", "pirate", "hacker",
+    "ransomware", "mdp", "password", "routeur", "switch", "logiciel", "application", "internet", "wifi"
+]
+
 MOTS_ENTREPRISES = ["siege", "agence", "entreprise", "societe", "site", "filiale", "bureau", "etage", "batiment", "campus"]
 
 MOTS_LIEUX = [

@@ -1,4 +1,4 @@
-# main.py — NEXUS V27 (Escalade Scoring & Contexte IT)
+# main.py — NEXUS V29 (Tolérance Fautes de Frappe Multidomaine)
 import spacy
 import joblib
 import os
@@ -7,17 +7,47 @@ import warnings
 import datetime
 import random
 import unicodedata
+import re
+from difflib import get_close_matches
 
 from nexus_core import TextEncoder
 from nexus_config import *
 
 warnings.filterwarnings("ignore")
 
+# ─── AUTO-CORRECTEUR ORTHOGRAPHIQUE (FUZZY MATCHING GLOBAL) ────────
+# Le dictionnaire maître inclut désormais TOUS les mots clés de tous les domaines !
+DICTIONNAIRE_MAITRE = set(
+    MOTS_LIEUX + MOTS_ARMES + MOTS_CORPS + MOTS_GRAVES +
+    SYMPTOMES_GLOBAUX + SYMPTOMES_SEVERES + MOTS_BENINS +
+    MOTS_ENTREPRISES + MOTS_DELITS + MOTS_SINISTRES + MOTS_IT
+)
+
 
 def enlever_accents(texte):
     return ''.join(c for c in unicodedata.normalize('NFD', texte) if unicodedata.category(c) != 'Mn').lower()
 
 
+def corriger_fautes_frappe(texte):
+    """
+    Corrige les mots mal orthographiés s'ils ressemblent à 75% à un mot vital du DICTIONNAIRE_MAITRE.
+    Fonctionne pour la médecine, la police, les pompiers et l'informatique.
+    """
+    texte_sans_accents = enlever_accents(texte)
+    mots = re.findall(r'\b\w+\b', texte_sans_accents)
+    texte_corrige = texte_sans_accents
+
+    for mot in set(mots):
+        if len(mot) >= 4 and mot not in DICTIONNAIRE_MAITRE:
+            corrections = get_close_matches(mot, DICTIONNAIRE_MAITRE, n=1, cutoff=0.75)
+            if corrections:
+                bon_mot = corrections[0]
+                texte_corrige = re.sub(rf'\b{mot}\b', bon_mot, texte_corrige)
+
+    return texte_corrige
+
+
+# ─── MOTEUR LINGUISTIQUE ───────────────────────────────────────────
 class NexusLinguisticEngine:
     def __init__(self):
         self.nlp = spacy.load("fr_core_news_md")
@@ -35,9 +65,11 @@ class NexusLinguisticEngine:
         self.ruler.add_patterns(patterns)
 
     def analyser(self, texte):
-        return self.nlp(enlever_accents(texte))
+        texte_corrige = corriger_fautes_frappe(texte)
+        return self.nlp(texte_corrige)
 
 
+# ─── SHADOW LOGGER ─────────────────────────────────────────────────
 class ShadowLogger:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -59,6 +91,7 @@ class ShadowLogger:
         self.conn.commit()
 
 
+# ─── GUARDS AVANCÉS ────────────────────────────────────────────────
 class NegationGuard:
     def contient_negation(self, doc):
         text_lower = doc.text.lower()
@@ -101,9 +134,10 @@ class LocationGuard:
         return has_lieu, list(set(corps_trouves)), entreprise_trouvee
 
 
+# ─── SYSTEME PRINCIPAL NEXUS ───────────────────────────────────────
 class NexusMainSystem:
     def __init__(self):
-        print("🧠 Initialisation NEXUS V27 (Escalade Scoring & Contexte IT)...")
+        print("🧠 Initialisation NEXUS V29 (Auto-Correcteur Multidomaine)...")
         self.engine = NexusLinguisticEngine()
         self.model_unified = joblib.load(MODEL_PATH)
         self.model_friction = joblib.load(MODEL_FRICTION_PATH)
@@ -123,17 +157,24 @@ class NexusMainSystem:
         probas = self.model_unified.predict_proba([texte_original])
         confiance = float(max(probas[0][0])) if len(probas) > 0 else 0.5
 
-        # ── 1. Filtre Fiction / Négation ──────────────────
+        # ── 1. Filtre Fiction / Négation
         is_negated, raison = self.guard.contient_negation(doc)
         if is_negated:
             return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, "INFO", 1, 1, confiance
 
-        # ── 2. ANALYSE DES ENTITÉS (NER) ──────────────────
+        # ── 2. ANALYSE DES ENTITÉS (NER)
         has_lieu, corps_trouves, entreprise_trouvee = self.location_guard.verifier_localisation(doc)
         armes_trouvees = [ent.text for ent in doc.ents if ent.label_ == "ARME"]
 
-        # ── 3. TRIAGE PRIORITAIRE ─────────────────────────
+        # ── 3. TRIAGE PRIORITAIRE
         if not force_score:
+
+            # 0. DÉTRESSE GÉNÉRIQUE (Cris trop courts)
+            mots_detresse = ["au secours", "a l'aide", "aidez moi", "vite"]
+            if any(texte_propre.strip() == md for md in mots_detresse) or (
+                    len(texte_propre) < 15 and not any(ent.label_ for ent in doc.ents)):
+                return domaine, 0, [
+                    "🚨 DÉTRESSE : Que se passe-t-il exactement et où êtes-vous ?"], False, domaine, impact, urgence, confiance
 
             # A. PRIORITÉ MÉDICALE
             if domaine == "MÉDICAL" and not corps_trouves:
@@ -151,10 +192,10 @@ class NexusMainSystem:
             # C. LOCALISATION GÉOGRAPHIQUE
             DOMAINES_TERRAIN = {"MÉDICAL", "POLICE", "POMPIER"}
             if domaine in DOMAINES_TERRAIN and not has_lieu:
-                msg = f"🚨 J'ai bien noté la blessure ({', '.join(corps_trouves)}), mais à quelle ADRESSE GÉOGRAPHIQUE vous trouvez-vous ?" if corps_trouves else "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?"
+                msg = f"🚨 J'ai bien noté l'alerte ({', '.join(corps_trouves)}), mais à quelle ADRESSE GÉOGRAPHIQUE vous trouvez-vous ?" if corps_trouves else "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?"
                 return domaine, 0, [msg], False, domaine, impact, urgence, confiance
 
-            # D. NOUVEAU : CONTEXTE IT (SOCIÉTÉ / SITE)
+            # D. CONTEXTE IT (SOCIÉTÉ / SITE)
             DOMAINES_IT = {"INFRA", "MATÉRIEL", "ACCÈS"}
             if domaine in DOMAINES_IT and not entreprise_trouvee and not has_lieu:
                 return domaine, 0, [
@@ -173,11 +214,10 @@ class NexusMainSystem:
                     question = "Pouvez-vous donner plus de détails sur la situation ?"
                 return domaine, 0, [f"{amorce} {question}"], False, domaine, impact, urgence, confiance
 
-        # ── 4. NOTATION EXPERTE (Override & Escalade) ───────
+        # ── 4. NOTATION EXPERTE (Override & Escalade)
         ajustements_raisons = []
         override_applique = False
 
-        # 4a. SUR-NOTATION ABSOLUE (10/10)
         mots_critiques = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
                           "arret cardiaque", "respire plus"]
         for mc in mots_critiques:
@@ -187,33 +227,29 @@ class NexusMainSystem:
                 override_applique = True
                 break
 
-                # 4b. ESCALADE (Minimum 8/10) pour les cas graves mais non mortels
         if not override_applique:
             escalade_requise = False
             raison_escalade = ""
 
-            # Vérifie les parties du corps sensibles (Tête, Dos, Poitrine...)
             if any(c in corps_trouves for c in CORPS_SENSIBLES):
                 escalade_requise = True
                 raison_escalade = "Partie du corps sensible touchée"
 
-            # Vérifie les symptômes sévères (Epilepsie, Fracture...)
             elif any(ss in texte_propre for ss in SYMPTOMES_SEVERES):
                 escalade_requise = True
                 raison_escalade = "Symptôme sévère détecté"
 
-            # Escalade IT VIP (Siège, Datacenter...)
             elif domaine in {"INFRA", "MATÉRIEL", "ACCÈS"} and any(
                     vip in texte_propre for vip in ["siege", "datacenter", "direction"]):
                 escalade_requise = True
                 raison_escalade = "Site IT critique impacté"
 
             if escalade_requise:
-                impact, urgence = max(impact, 3), max(urgence, 3)  # Minimum 3/4 (donne 8/10)
+                impact, urgence = max(impact, 3), max(urgence, 3)
                 ajustements_raisons.append(f"📈 ESCALADE : {raison_escalade}. Urgence rehaussée.")
                 override_applique = True
 
-        # ── 5. ANTI-HYPOCONDRIE ──
+        # ── 5. ANTI-HYPOCONDRIE
         if not override_applique:
             has_benin = any(mb in texte_propre for mb in MOTS_BENINS)
             has_grave = any(ent.label_ in ["ARME", "ALERTE_VITALE"] for ent in doc.ents)
@@ -225,7 +261,7 @@ class NexusMainSystem:
                 impact, urgence = min(impact, 2), min(urgence, 2)
                 ajustements_raisons.append("📉 AJUSTEMENT : Confiance IA trop faible pour déclarer une crise majeure.")
 
-        # ── 6. SYNERGIES MULTI-FORCES ──────────────────────
+        # ── 6. SYNERGIES MULTI-FORCES
         domaines_assignes = [domaine]
         synergie_raisons = []
 
@@ -236,7 +272,7 @@ class NexusMainSystem:
                         domaines_assignes.append(s)
                 synergie_raisons.append(f"Mot-clé détecté : '{mot_cle.upper()}'")
 
-        # ── 7. CALCUL DU SCORE FINAL ───────────────────────
+        # ── 7. CALCUL DU SCORE FINAL
         score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 1.0
 
         raisons = [f"Impact IA  : {impact}/4", f"Urgence IA : {urgence}/4", f"Confiance  : {confiance:.1%}"]
@@ -254,10 +290,13 @@ class NexusMainSystem:
         return domaine_final, score, raisons, True, domaine, impact, urgence, confiance
 
 
+# ==============================================================================
+# BOUCLE PRINCIPALE
+# ==============================================================================
 if __name__ == "__main__":
     nexus = NexusMainSystem()
     print("\n" + "=" * 52)
-    print("🚀  NEXUS V27 — COMMAND CENTER (Escalade Scoring & IT)")
+    print("🚀  NEXUS V29 — COMMAND CENTER (Auto-Correcteur Multidomaine)")
     print("=" * 52)
     print("   Tapez 'exit' ou 'q' pour quitter.\n")
 
