@@ -1,4 +1,4 @@
-# main.py — NEXUS V24 (Priorité Triage Anatomique)
+# main.py — NEXUS V27 (Escalade Scoring & Contexte IT)
 import spacy
 import joblib
 import os
@@ -14,16 +14,10 @@ from nexus_config import *
 warnings.filterwarnings("ignore")
 
 
-# ==============================================================================
-# FONCTION DE NETTOYAGE
-# ==============================================================================
 def enlever_accents(texte):
     return ''.join(c for c in unicodedata.normalize('NFD', texte) if unicodedata.category(c) != 'Mn').lower()
 
 
-# ==============================================================================
-# LE MOTEUR LINGUISTIQUE (spaCy)
-# ==============================================================================
 class NexusLinguisticEngine:
     def __init__(self):
         self.nlp = spacy.load("fr_core_news_md")
@@ -36,6 +30,7 @@ class NexusLinguisticEngine:
         for m in MOTS_GRAVES: patterns.append({"label": "ALERTE_VITALE", "pattern": m})
         for m in FICTION_MARKERS: patterns.append({"label": "FICTION", "pattern": m})
         for m in NEGATION_MARKERS: patterns.append({"label": "NEGATION", "pattern": m})
+        for m in MOTS_ENTREPRISES: patterns.append({"label": "ENTREPRISE", "pattern": m})
 
         self.ruler.add_patterns(patterns)
 
@@ -43,9 +38,6 @@ class NexusLinguisticEngine:
         return self.nlp(enlever_accents(texte))
 
 
-# ==============================================================================
-# SHADOW LOGGER
-# ==============================================================================
 class ShadowLogger:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -67,9 +59,6 @@ class ShadowLogger:
         self.conn.commit()
 
 
-# ==============================================================================
-# GUARDS AVANCÉS (Sécurité, Négation, Géographie vs Anatomie)
-# ==============================================================================
 class NegationGuard:
     def contient_negation(self, doc):
         text_lower = doc.text.lower()
@@ -77,7 +66,9 @@ class NegationGuard:
             return True, "Ceci est un exercice ou un test. Procédures annulées."
 
         if any(ent.label_ == "FICTION" for ent in doc.ents):
-            if "cinema" in text_lower and ("incendie" in text_lower or "feu" in text_lower):
+            if "apres le film" in text_lower or "apres mon film" in text_lower:
+                pass
+            elif "cinema" in text_lower and ("incendie" in text_lower or "feu" in text_lower):
                 pass
             else:
                 return True, "Contexte de fiction ou expression idiomatique détecté."
@@ -93,32 +84,26 @@ class NegationGuard:
 
 class LocationGuard:
     def verifier_localisation(self, doc):
-        """
-        Retourne (has_lieu, corps_trouves)
-        Distingue l'adresse géographique (rue, ville) de la localisation anatomique.
-        """
         has_lieu = False
         corps_trouves = []
+        entreprise_trouvee = False
 
         for ent in doc.ents:
             if ent.label_ == "CORPS":
                 corps_trouves.append(ent.text)
+            elif ent.label_ == "ENTREPRISE":
+                entreprise_trouvee = True
             elif ent.label_ in ["LOC", "LIEU"]:
                 mots_entite = enlever_accents(ent.text).split()
-                # On annule le lieu si spaCy a confondu une partie du corps avec un lieu
-                is_body_part = any(c in mots_entite for c in MOTS_CORPS)
-                if not is_body_part:
+                if not any(c in mots_entite for c in MOTS_CORPS):
                     has_lieu = True
 
-        return has_lieu, list(set(corps_trouves))
+        return has_lieu, list(set(corps_trouves)), entreprise_trouvee
 
 
-# ==============================================================================
-# SYSTEME PRINCIPAL NEXUS
-# ==============================================================================
 class NexusMainSystem:
     def __init__(self):
-        print("🧠 Initialisation NEXUS V24 (Priorité Triage Anatomique)...")
+        print("🧠 Initialisation NEXUS V27 (Escalade Scoring & Contexte IT)...")
         self.engine = NexusLinguisticEngine()
         self.model_unified = joblib.load(MODEL_PATH)
         self.model_friction = joblib.load(MODEL_FRICTION_PATH)
@@ -141,23 +126,22 @@ class NexusMainSystem:
         # ── 1. Filtre Fiction / Négation ──────────────────
         is_negated, raison = self.guard.contient_negation(doc)
         if is_negated:
-            return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, domaine, impact, urgence, confiance
+            return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, "INFO", 1, 1, confiance
 
         # ── 2. ANALYSE DES ENTITÉS (NER) ──────────────────
-        has_lieu, corps_trouves = self.location_guard.verifier_localisation(doc)
+        has_lieu, corps_trouves, entreprise_trouvee = self.location_guard.verifier_localisation(doc)
         armes_trouvees = [ent.text for ent in doc.ents if ent.label_ == "ARME"]
 
-        # ── 3. TRIAGE PRIORITAIRE (Anatomie avant Géo) ──────
+        # ── 3. TRIAGE PRIORITAIRE ─────────────────────────
         if not force_score:
 
-            # A. PRIORITÉ MÉDICALE : Où est le mal ?
+            # A. PRIORITÉ MÉDICALE
             if domaine == "MÉDICAL" and not corps_trouves:
-                # Sauf si c'est une urgence globale comme un malaise ou arrêt
-                if not any(mot in texte_propre for mot in ["malaise", "arret", "respire plus", "inconscient"]):
+                if not any(mot in texte_propre for mot in SYMPTOMES_GLOBAUX):
                     return domaine, 0, [
                         "🩹 PRÉCISION REQUISE : À quelle partie du corps se situe la blessure ou la douleur ?"], False, domaine, impact, urgence, confiance
 
-            # B. PRIORITÉ POLICE : Y a-t-il une arme ?
+            # B. PRIORITÉ POLICE
             if domaine == "POLICE" and not armes_trouvees and "vol" not in texte_propre:
                 statut_f = self.model_friction.predict([texte_original])[0]
                 if statut_f == "PRECISION_POL":
@@ -167,40 +151,81 @@ class NexusMainSystem:
             # C. LOCALISATION GÉOGRAPHIQUE
             DOMAINES_TERRAIN = {"MÉDICAL", "POLICE", "POMPIER"}
             if domaine in DOMAINES_TERRAIN and not has_lieu:
-                if corps_trouves:
-                    msg = f"🚨 J'ai bien noté la blessure ({', '.join(corps_trouves)}), mais à quelle ADRESSE GÉOGRAPHIQUE exacte vous trouvez-vous ?"
-                else:
-                    msg = "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?"
+                msg = f"🚨 J'ai bien noté la blessure ({', '.join(corps_trouves)}), mais à quelle ADRESSE GÉOGRAPHIQUE vous trouvez-vous ?" if corps_trouves else "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?"
                 return domaine, 0, [msg], False, domaine, impact, urgence, confiance
 
-            # D. FRICTION ML CLASSIQUE (Reste des cas)
+            # D. NOUVEAU : CONTEXTE IT (SOCIÉTÉ / SITE)
+            DOMAINES_IT = {"INFRA", "MATÉRIEL", "ACCÈS"}
+            if domaine in DOMAINES_IT and not entreprise_trouvee and not has_lieu:
+                return domaine, 0, [
+                    "🏢 CONTEXTE REQUIS : Pour quelle société, agence ou site signalez-vous cet incident ?"], False, domaine, impact, urgence, confiance
+
+            # E. FRICTION ML CLASSIQUE
             statut_friction = self.model_friction.predict([texte_original])[0]
             if statut_friction != "COMPLET":
                 amorce = f"Je vois qu'il s'agit potentiellement d'un cas pour le service {domaine}."
-
                 if statut_friction == "PRECISION_POMP":
                     question = random.choice(
                         ["Y a-t-il des personnes coincées à l'intérieur ?", "Voyez-vous des flammes ou de la fumée ?"])
-                elif "TECH" in statut_friction or domaine in {"INFRA", "MATÉRIEL", "ACCÈS"}:
+                elif "TECH" in statut_friction or domaine in DOMAINES_IT:
                     question = "Quel est le message d'erreur exact ou l'équipement touché ?"
                 else:
                     question = "Pouvez-vous donner plus de détails sur la situation ?"
-
                 return domaine, 0, [f"{amorce} {question}"], False, domaine, impact, urgence, confiance
 
-        # ── 4. ANTI-HYPOCONDRIE ────────────────────────────
+        # ── 4. NOTATION EXPERTE (Override & Escalade) ───────
         ajustements_raisons = []
-        has_benin = any(mb in texte_propre for mb in MOTS_BENINS)
-        has_grave = any(ent.label_ in ["ARME", "ALERTE_VITALE"] for ent in doc.ents)
+        override_applique = False
 
-        if has_benin and not has_grave:
-            impact, urgence = 1, 1
-            ajustements_raisons.append("🛡️ AJUSTEMENT : Situation bénigne détectée, urgence rétrogradée.")
-        elif confiance < 0.40 and not has_grave:
-            impact, urgence = min(impact, 2), min(urgence, 2)
-            ajustements_raisons.append("📉 AJUSTEMENT : Confiance IA trop faible pour déclarer une crise majeure.")
+        # 4a. SUR-NOTATION ABSOLUE (10/10)
+        mots_critiques = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
+                          "arret cardiaque", "respire plus"]
+        for mc in mots_critiques:
+            if mc in texte_propre:
+                impact, urgence = 4, 4
+                ajustements_raisons.append(f"🚀 SUR-NOTATION : Alerte vitale absolue détectée ('{mc}').")
+                override_applique = True
+                break
 
-        # ── 5. SYNERGIES MULTI-FORCES ──────────────────────
+                # 4b. ESCALADE (Minimum 8/10) pour les cas graves mais non mortels
+        if not override_applique:
+            escalade_requise = False
+            raison_escalade = ""
+
+            # Vérifie les parties du corps sensibles (Tête, Dos, Poitrine...)
+            if any(c in corps_trouves for c in CORPS_SENSIBLES):
+                escalade_requise = True
+                raison_escalade = "Partie du corps sensible touchée"
+
+            # Vérifie les symptômes sévères (Epilepsie, Fracture...)
+            elif any(ss in texte_propre for ss in SYMPTOMES_SEVERES):
+                escalade_requise = True
+                raison_escalade = "Symptôme sévère détecté"
+
+            # Escalade IT VIP (Siège, Datacenter...)
+            elif domaine in {"INFRA", "MATÉRIEL", "ACCÈS"} and any(
+                    vip in texte_propre for vip in ["siege", "datacenter", "direction"]):
+                escalade_requise = True
+                raison_escalade = "Site IT critique impacté"
+
+            if escalade_requise:
+                impact, urgence = max(impact, 3), max(urgence, 3)  # Minimum 3/4 (donne 8/10)
+                ajustements_raisons.append(f"📈 ESCALADE : {raison_escalade}. Urgence rehaussée.")
+                override_applique = True
+
+        # ── 5. ANTI-HYPOCONDRIE ──
+        if not override_applique:
+            has_benin = any(mb in texte_propre for mb in MOTS_BENINS)
+            has_grave = any(ent.label_ in ["ARME", "ALERTE_VITALE"] for ent in doc.ents)
+
+            if has_benin and not has_grave:
+                impact, urgence = 1, 1
+                ajustements_raisons.append("🛡️ AJUSTEMENT : Situation bénigne détectée, urgence rétrogradée.")
+            elif confiance < 0.40 and not has_grave:
+                impact, urgence = min(impact, 2), min(urgence, 2)
+                ajustements_raisons.append("📉 AJUSTEMENT : Confiance IA trop faible pour déclarer une crise majeure.")
+
+        # ── 6. SYNERGIES MULTI-FORCES ──────────────────────
         domaines_assignes = [domaine]
         synergie_raisons = []
 
@@ -211,7 +236,7 @@ class NexusMainSystem:
                         domaines_assignes.append(s)
                 synergie_raisons.append(f"Mot-clé détecté : '{mot_cle.upper()}'")
 
-        # ── 6. CALCUL DU SCORE ─────────────────────────────
+        # ── 7. CALCUL DU SCORE FINAL ───────────────────────
         score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 1.0
 
         raisons = [f"Impact IA  : {impact}/4", f"Urgence IA : {urgence}/4", f"Confiance  : {confiance:.1%}"]
@@ -229,13 +254,10 @@ class NexusMainSystem:
         return domaine_final, score, raisons, True, domaine, impact, urgence, confiance
 
 
-# ==============================================================================
-# BOUCLE PRINCIPALE
-# ==============================================================================
 if __name__ == "__main__":
     nexus = NexusMainSystem()
     print("\n" + "=" * 52)
-    print("🚀  NEXUS V24 — COMMAND CENTER (spaCy NER + Anatomie)")
+    print("🚀  NEXUS V27 — COMMAND CENTER (Escalade Scoring & IT)")
     print("=" * 52)
     print("   Tapez 'exit' ou 'q' pour quitter.\n")
 

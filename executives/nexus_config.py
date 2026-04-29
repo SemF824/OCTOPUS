@@ -1,15 +1,11 @@
 # nexus_config.py
 import os
 
-# --- CHEMINS LOCAUX (PC) ---
 DB_PATH              = "../nexus_bionexus.db"
 MODEL_PATH           = "../pickle_result/nexus_v21_unified.pkl"
 MODEL_FRICTION_PATH  = "../pickle_result/nexus_v21_friction.pkl"
-
-# --- PARAMÈTRES IA ---
 CONFIDENCE_THRESHOLD = 0.45
 
-# --- SÉCURITÉ : NÉGATIONS ET FICTION ---
 NEGATION_MARKERS = [
     "pas de", "aucun", "aucune", "rien", "jamais", "plus de",
     "sans", "n'a pas", "n'ont pas", "il n'y a pas", "y a pas",
@@ -18,71 +14,100 @@ NEGATION_MARKERS = [
 ]
 
 FICTION_MARKERS = [
-    "manga", "film", "serie", "jeu video", "anime", "livre", "blague",
+    "manga", "film", "films", "serie", "series", "jeu video", "jeux videos", "anime", "livre", "blague",
     "roman", "bande dessinee", "bd", "dessin anime", "minecraft", "fortnite", "gta",
     "exercice", "simulation", "entrainement", "test d'alarme", "drill",
-    "titan", "zombie", "alien", "vampire", "monstre", "dragon", "heros",
+    "titan", "titans", "zombie", "zombies", "alien", "aliens", "vampire", "vampires",
+    "monstre", "monstres", "dragon", "dragons", "heros",
     "va me tuer", "vais le tuer", "vais la tuer", "je vais mourir de",
     "tuer pour", "mourir de rire", "mourir de honte", "tuer le temps",
     "je suis mort", "il est mort de rire", "crever de chaud", "crever de froid",
     "c'est une blague", "pour rire", "je deconnais"
 ]
 
-# --- LES DICTIONNAIRES NER SPACY ---
 MOTS_ARMES = [
-    "arme", "couteau", "pistolet", "fusil", "kalachnikov", "machette", "hache",
-    "batte", "poignard", "lame", "revolver", "mitraillette", "grenade", "bombe",
-    "explosif", "cocktail molotov", "barre de fer", "cutter"
+    "arme", "armes", "couteau", "couteaux", "pistolet", "pistolets", "fusil", "fusils",
+    "kalachnikov", "kalachnikovs", "machette", "machettes", "hache", "haches",
+    "batte", "battes", "poignard", "poignards", "lame", "lames", "revolver", "revolvers",
+    "mitraillette", "mitraillettes", "grenade", "grenades", "bombe", "bombes",
+    "explosif", "explosifs", "cocktail molotov", "barre de fer", "cutter", "cutters"
 ]
 
 MOTS_CORPS = [
     "tete", "crane", "visage", "oeil", "yeux", "cou", "nuque", "gorge",
-    "epaule", "bras", "coude", "poignet", "main", "doigt", "pouce",
+    "epaule", "epaules", "bras", "coude", "coudes", "poignet", "poignets", "main", "mains", "doigt", "doigts", "pouce",
     "dos", "colonne", "poitrine", "thorax", "coeur", "ventre", "estomac", "abdomen",
-    "bassin", "hanche", "jambe", "genou", "cheville", "pied", "orteil"
+    "bassin", "hanche", "hanches", "jambe", "jambes", "genou", "genoux", "cheville", "chevilles", "pied", "pieds", "orteil", "orteils"
 ]
+
+# NOUVEAU : Parties du corps où une blessure est toujours "Haute" priorité
+CORPS_SENSIBLES = ["tete", "crane", "visage", "oeil", "yeux", "cou", "nuque", "gorge", "colonne", "poitrine", "thorax", "coeur", "ventre", "estomac", "abdomen"]
+
+SYMPTOMES_GLOBAUX = [
+    "malaise", "malaises", "arret", "respire", "inconscient", "inconsciente", "reveil", "reveille",
+    "etouffe", "cyanose", "noyade", "suicide", "pendu",
+    "overdose", "medicament", "medicaments", "poison", "alcool", "drogue", "ivre",
+    "fievre", "temperature", "virus", "infection", "grippe", "septicemie",
+    "allergie", "allergique", "choc", "anaphylactique", "gonfle",
+    "convulsion", "convulsions", "epilepsie", "tremble", "tremblement", "angoisse", "panique",
+    "hallucination", "delire", "agite", "fou",
+    "fatigue", "epuise", "faiblesse", "tombe", "froid", "chaud", "brule partout", "mal partout", "fracture", "casse"
+]
+
+# NOUVEAU : Symptômes qui ne sont pas mortels dans la minute, mais méritent une "Haute" priorité (Escalade)
+SYMPTOMES_SEVERES = ["epilepsie", "convulsion", "convulsions", "fracture", "casse", "allergie", "gonfle", "brulure", "brule", "hemorragie"]
 
 MOTS_GRAVES = [
-    "sang", "saigne", "hemorragie", "feu", "incendie", "brule", "mort", "arret cardiaque",
-    "respire plus", "viol", "otage", "fusillade", "braquage", "overdose",
-    "inconscient", "etouffe", "cyanose", "ampute", "suicide", "noyade"
-]
+    "sang", "saigne", "hemorragie", "feu", "incendie", "brule", "mort", "morts", "arret cardiaque",
+    "viol", "viols", "otage", "otages", "fusillade", "fusillades", "braquage", "braquages",
+    "ampute", "crash", "crashe", "avale"
+] + SYMPTOMES_GLOBAUX
 
 MOTS_BENINS = [
-    "ecorche", "ecorchure", "renseignement", "entorse", "panne", "casse", "baton",
+    "ecorche", "ecorchure", "renseignement", "entorse", "panne", "baton",
     "rien", "va bien", "ras", "pas grave", "juste", "ordinateur", "telephone",
     "rhume", "toux", "bleu", "bosse", "egratignure", "ampoule", "perdu"
 ]
 
-# --- MOTS-CLÉS DE LOCALISATION (LocationGuard) ---
+# NOUVEAU : Mots pour détecter si l'utilisateur a donné son entreprise/site IT
+MOTS_ENTREPRISES = ["siege", "agence", "entreprise", "societe", "site", "filiale", "bureau", "etage", "batiment", "campus"]
+
 MOTS_LIEUX = [
-    "rue", "avenue", "boulevard", "bd", "allee", "impasse", "chemin", "route", "voie",
-    "passage", "square", "place", "quai", "berge", "pont", "carrefour", "rond-point",
-    "autoroute", "nationale", "departementale", "rocade", "peripherique", "tunnel",
-    "adresse", "secteur", "quartier", "zone", "batiment", "immeuble", "residence",
-    "etage", "rez-de-chaussee", "sous-sol", "chez",
-    "appartement", "maison", "villa", "rdc", "cave", "grenier", "toit", "parking", "garage", "jardin", "cour",
-    "gare", "station", "metro", "rer", "bus", "arret", "aeroport", "tram", "tramway", "port", "train", "tgv",
-    "centre commercial", "supermarche", "marche", "mall", "magasin", "boutique", "hypermarche",
-    "restaurant", "resto", "cafe", "bar", "hotel", "auberge", "banque", "poste",
-    "ecole", "college", "lycee", "universite", "fac", "campus", "creche",
-    "hopital", "clinique", "urgences", "pharmacie", "cabinet", "laboratoire", "ehpad",
-    "mairie", "prefecture", "tribunal", "commissariat", "gendarmerie", "prison",
-    "stade", "gymnase", "piscine", "salle", "parc", "foret", "bois", "plage", "lac", "riviere", "fleuve",
-    "musee", "bibliotheque", "cinema", "theatre", "camping",
-    "usine", "entrepot", "chantier", "bureau", "open space", "entreprise", "societe", "datacenter",
-    "ville", "village", "commune", "departement", "region",
+    "rue", "rues", "avenue", "avenues", "boulevard", "boulevards", "bd", "allee", "allees",
+    "impasse", "impasses", "chemin", "chemins", "route", "routes", "voie", "voies",
+    "passage", "passages", "square", "squares", "place", "places", "quai", "quais",
+    "berge", "berges", "pont", "ponts", "carrefour", "croisement", "rond-point",
+    "autoroute", "autoroutes", "nationale", "departementale", "rocade", "peripherique", "tunnel", "tunnels",
+    "adresse", "secteur", "quartier", "zone", "batiment", "batiments", "immeuble", "immeubles",
+    "residence", "residences", "etage", "etages", "rez-de-chaussee", "sous-sol", "chez",
+    "appartement", "appartements", "maison", "maisons", "villa", "villas", "rdc", "cave", "caves",
+    "grenier", "toit", "toits", "parking", "parkings", "garage", "garages", "jardin", "jardins", "cour",
+    "gare", "gares", "station", "stations", "metro", "rer", "bus", "arret", "aeroport", "aeroports",
+    "tram", "tramway", "port", "ports", "train", "tgv",
+    "centre commercial", "centres commerciaux", "supermarche", "supermarches", "marche", "mall",
+    "magasin", "magasins", "boutique", "boutiques", "hypermarche",
+    "restaurant", "restaurants", "resto", "restos", "cafe", "cafes", "bar", "bars",
+    "hotel", "hotels", "auberge", "banque", "banques", "poste",
+    "ecole", "ecoles", "college", "colleges", "lycee", "lycees", "universite", "universites", "fac", "campus", "creche", "creches",
+    "hopital", "hopitaux", "clinique", "cliniques", "urgences", "pharmacie", "pharmacies", "cabinet", "cabinets", "laboratoire", "ehpad",
+    "mairie", "prefecture", "tribunal", "commissariat", "gendarmerie", "prison", "prisons",
+    "stade", "stades", "gymnase", "piscine", "piscines", "salle", "salles", "parc", "parcs",
+    "foret", "forets", "bois", "plage", "plages", "lac", "lacs", "riviere", "rivieres", "fleuve", "fleuves",
+    "musee", "musees", "bibliotheque", "cinema", "cinemas", "theatre", "theatres", "camping", "campings",
+    "usine", "usines", "entrepot", "entrepots", "chantier", "chantiers", "bureau", "bureaux",
+    "open space", "entreprise", "entreprises", "societe", "societes", "datacenter",
+    "ville", "villes", "village", "villages", "commune", "communes", "departement", "region",
     "paris", "lyon", "marseille", "toulouse", "bordeaux", "nantes", "strasbourg", "lille", "rennes", "montpellier", "nice"
 ]
 
-# --- SYNERGIES MULTI-FORCES ---
 SYNERGIES_URGENCE = {
     "fusillade":          ["POLICE", "MÉDICAL"],
     "tireur":             ["POLICE", "MÉDICAL"],
     "agression":          ["POLICE", "MÉDICAL"],
     "prise d'otage":      ["POLICE", "MÉDICAL"],
     "attentat":           ["POLICE", "POMPIER", "MÉDICAL"],
-    "accident grave":     ["POMPIER", "POLICE", "MÉDICAL"],
+    "accident":           ["POMPIER", "POLICE", "MÉDICAL"],
+    "crash":              ["POMPIER", "POLICE", "MÉDICAL"],
     "explosion":          ["POMPIER", "POLICE", "MÉDICAL"],
     "suicide":            ["POLICE", "MÉDICAL", "POMPIER"],
     "incendie":           ["POMPIER", "POLICE"],
@@ -94,7 +119,6 @@ SYNERGIES_URGENCE = {
     "blackout":           ["INFRA", "MATÉRIEL"]
 }
 
-# --- MATRICE DE PRIORITÉ ---
 MATRICE_PRIORITE = [
     [1.0, 2.0, 3.0, 4.0],
     [2.0, 4.0, 6.0, 7.0],
