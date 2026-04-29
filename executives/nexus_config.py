@@ -49,29 +49,36 @@ SYNERGIES_URGENCE = {
 # ✅ NOUVEAU — Lieux nommés et points de repère ajoutés
 MOTS_LIEUX = [
     # Voirie classique
-    "rue", "avenue", "boulevard", "bd", "allée", "impasse", "chemin",
+    "rue", "avenue", "boulevard", "bd", "allee", "impasse", "chemin",
     "route", "voie", "passage", "square", "place", "quai", "berge",
+    "pont", "carrefour", "rond-point", "autoroute",
     # Adresse / repère
-    "adresse", "secteur", "quartier", "zone", "ici", "là", "devant",
-    "derrière", "à côté", "en face", "bâtiment", "immeuble", "résidence",
-    "étage", "rez-de-chaussée", "sous-sol",
+    "adresse", "secteur", "quartier", "zone", "ici", "la", "devant",
+    "derrière", "a côté", "en face", "batiment", "immeuble", "residence",
+    "etage", "rez-de-chaussee", "sous-sol",
+    # Bâtiments et mots clés génériques
+    "appartement", "maison", "villa", "rdc",
+    "cave", "grenier", "toit", "ville", "chez"
     # Transport
-    "gare", "station", "métro", "rer", "bus", "arrêt", "aéroport",
-    "autoroute", "périphérique", "parking",
+    "gare", "station", "metro", "rer", "bus", "arret", "aeroport",
+    "autoroute", "peripherique", "parking",
+     "tram", "tramway", "port",
     # Lieux publics & monuments (LocationGuard rate ces cas sans liste)
-    "cathédrale", "église", "mosquée", "synagogue", "temple",
-    "école", "collège", "lycée", "université", "fac", "campus",
-    "hôpital", "clinique", "urgences", "pharmacie", "cabinet",
-    "mairie", "préfecture", "tribunal", "commissariat",
-    "stade", "gymnase", "piscine", "salle", "parc", "jardin", "forêt",
-    "centre commercial", "supermarché", "marché", "mall",
-    "restaurant", "café", "bar", "hôtel",
-    "musée", "bibliothèque", "cinéma", "théâtre",
-    "usine", "entrepôt", "chantier", "bureau", "open space",
+    "cathedrale", "eglise", "mosquee", "synagogue", "temple",
+    "ecole", "college", "lycee", "universite", "fac", "campus",
+    "hopital", "clinique", "urgences", "pharmacie", "cabinet",
+    "mairie", "prefecture", "tribunal", "commissariat",
+    "stade", "gymnase", "piscine", "salle", "parc", "jardin", "foret",
+    "centre commercial", "supermarche", "marche", "mall",
+    "restaurant", "cafe", "bar", "hotel",
+    "musee", "bibliotheque", "cinema", "theatre",
+    "usine", "entrepot", "chantier", "bureau", "open space",
+    "gendarmerie", "usine", "magasin", "boutique",
+    "hypermarche", "resto", "banque", "societe generale", "bnp", "bnp paribas",
     # Repères géographiques
-    "ville", "village", "commune", "département", "région",
+    "ville", "village", "commune", "departement", "region",
     "paris", "lyon", "marseille", "toulouse", "bordeaux", "nantes",
-    "strasbourg", "lille", "rennes", "montpellier", "nice",
+    "strasbourg", "lille", "rennes", "montpellier", "nice", "rennes"
 ]
 
 # --- MATRICE DE PRIORITÉ (Version Ghali) ---
