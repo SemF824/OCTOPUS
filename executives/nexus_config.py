@@ -140,3 +140,14 @@ MATRICE_PRIORITE = [
 ]
 
 RF_PARAMS = {'n_estimators': 350, 'max_depth': 30, 'class_weight': 'balanced', 'random_state': 42, 'n_jobs': -1}
+
+# --- DÉTECTION ÉMOTIONNELLE (STRESS & IRONIE) ---
+MOTS_STRESS = [
+    "vite", "urgent", "panique", "au secours", "aidez-moi", "peur", "terreur",
+    "dépêchez", "grave", "sang", "mort", "pitié", "crie", "pleure"
+]
+
+MOTS_IRONIE = [
+    "mdr", "lol", "ptdr", "blague", "je rigole", "pour de faux", "prank",
+    "haha", "hihi", "ironie", "tkt", "second degré", "juste un test", "rigole"
+]

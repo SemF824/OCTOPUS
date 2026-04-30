@@ -64,3 +64,4 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+nexus_bionexus.db

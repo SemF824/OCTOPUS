@@ -1,4 +1,4 @@
-# main.py — NEXUS V29 (Tolérance Fautes de Frappe Multidomaine)
+# main.py — NEXUS V29 (Tolérance Fautes de Frappe Multidomaine + Émotions)
 import spacy
 import joblib
 import os
@@ -12,27 +12,21 @@ from difflib import get_close_matches
 
 from nexus_core import TextEncoder
 from nexus_config import *
+from nexus_qualification import QualificationEngine
 
 warnings.filterwarnings("ignore")
 
 # ─── AUTO-CORRECTEUR ORTHOGRAPHIQUE (FUZZY MATCHING GLOBAL) ────────
-# Le dictionnaire maître inclut désormais TOUS les mots clés de tous les domaines !
 DICTIONNAIRE_MAITRE = set(
     MOTS_LIEUX + MOTS_ARMES + MOTS_CORPS + MOTS_GRAVES +
     SYMPTOMES_GLOBAUX + SYMPTOMES_SEVERES + MOTS_BENINS +
     MOTS_ENTREPRISES + MOTS_DELITS + MOTS_SINISTRES + MOTS_IT
 )
 
-
 def enlever_accents(texte):
     return ''.join(c for c in unicodedata.normalize('NFD', texte) if unicodedata.category(c) != 'Mn').lower()
 
-
 def corriger_fautes_frappe(texte):
-    """
-    Corrige les mots mal orthographiés s'ils ressemblent à 75% à un mot vital du DICTIONNAIRE_MAITRE.
-    Fonctionne pour la médecine, la police, les pompiers et l'informatique.
-    """
     texte_sans_accents = enlever_accents(texte)
     mots = re.findall(r'\b\w+\b', texte_sans_accents)
     texte_corrige = texte_sans_accents
@@ -45,7 +39,6 @@ def corriger_fautes_frappe(texte):
                 texte_corrige = re.sub(rf'\b{mot}\b', bon_mot, texte_corrige)
 
     return texte_corrige
-
 
 # ─── MOTEUR LINGUISTIQUE ───────────────────────────────────────────
 class NexusLinguisticEngine:
@@ -68,7 +61,6 @@ class NexusLinguisticEngine:
         texte_corrige = corriger_fautes_frappe(texte)
         return self.nlp(texte_corrige)
 
-
 # ─── SHADOW LOGGER ─────────────────────────────────────────────────
 class ShadowLogger:
     def __init__(self):
@@ -89,7 +81,6 @@ class ShadowLogger:
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (date_now, t_orig, t_fin, dom, str(imp), str(urg), f"{conf:.1%}"))
         self.conn.commit()
-
 
 # ─── GUARDS AVANCÉS ────────────────────────────────────────────────
 class NegationGuard:
@@ -114,7 +105,6 @@ class NegationGuard:
 
         return False, ""
 
-
 class LocationGuard:
     def verifier_localisation(self, doc):
         has_lieu = False
@@ -133,17 +123,16 @@ class LocationGuard:
 
         return has_lieu, list(set(corps_trouves)), entreprise_trouvee
 
-
 # ─── SYSTEME PRINCIPAL NEXUS ───────────────────────────────────────
 class NexusMainSystem:
     def __init__(self):
         print("🧠 Initialisation NEXUS V29 (Auto-Correcteur Multidomaine)...")
         self.engine = NexusLinguisticEngine()
         self.model_unified = joblib.load(MODEL_PATH)
-        self.model_friction = joblib.load(MODEL_FRICTION_PATH)
         self.guard = NegationGuard()
         self.location_guard = LocationGuard()
         self.logger = ShadowLogger()
+        self.qualifier = QualificationEngine() # 🎯 Ton nouveau moteur est chargé ici
 
     def evaluer_ticket(self, texte_original: str, force_score: bool = False):
         doc = self.engine.analyser(texte_original)
@@ -160,7 +149,10 @@ class NexusMainSystem:
         # ── 1. Filtre Fiction / Négation
         is_negated, raison = self.guard.contient_negation(doc)
         if is_negated:
-            return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, "INFO", 1, 1, confiance
+            # On demande au vigile de vérifier si c'est une blague avant de bloquer
+            ton_global = self.qualifier._detecter_ton(texte_original)
+            if ton_global != "IRONIE" and not any(mot in texte_propre for mot in ["rigole", "mdr", "blague", "lol"]):
+                return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, "INFO", 1, 1, confiance
 
         # ── 2. ANALYSE DES ENTITÉS (NER)
         has_lieu, corps_trouves, entreprise_trouvee = self.location_guard.verifier_localisation(doc)
@@ -168,64 +160,50 @@ class NexusMainSystem:
 
         # ── 3. TRIAGE PRIORITAIRE
         if not force_score:
-
-            # 0. DÉTRESSE GÉNÉRIQUE (Cris trop courts)
             mots_detresse = ["au secours", "a l'aide", "aidez moi", "vite"]
             if any(texte_propre.strip() == md for md in mots_detresse) or (
                     len(texte_propre) < 15 and not any(ent.label_ for ent in doc.ents)):
-                return domaine, 0, [
-                    "🚨 DÉTRESSE : Que se passe-t-il exactement et où êtes-vous ?"], False, domaine, impact, urgence, confiance
+                return domaine, 0, ["🚨 DÉTRESSE : Que se passe-t-il exactement et où êtes-vous ?"], False, domaine, impact, urgence, confiance
 
-            # A. PRIORITÉ MÉDICALE
             if domaine == "MÉDICAL" and not corps_trouves:
                 if not any(mot in texte_propre for mot in SYMPTOMES_GLOBAUX):
-                    return domaine, 0, [
-                        "🩹 PRÉCISION REQUISE : À quelle partie du corps se situe la blessure ou la douleur ?"], False, domaine, impact, urgence, confiance
+                    return domaine, 0, ["🩹 PRÉCISION REQUISE : À quelle partie du corps se situe la blessure ou la douleur ?"], False, domaine, impact, urgence, confiance
 
-            # B. PRIORITÉ POLICE
-            if domaine == "POLICE" and not armes_trouvees and "vol" not in texte_propre:
-                statut_f = self.model_friction.predict([texte_original])[0]
-                if statut_f == "PRECISION_POL":
-                    return domaine, 0, [
-                        "⚖️ SÉCURITÉ : Y a-t-il des armes visibles (couteau, arme à feu, etc.) ?"], False, domaine, impact, urgence, confiance
+            # E. NOUVEAU MOTEUR DE QUALIFICATION (ÉMOTIONS + FRICTION)
+            ticket_complet, question_generale = self.qualifier.qualifier_ticket(texte_original, domaine)
+            if not ticket_complet:
+                return domaine, 0, [f"💬 {question_generale}"], False, domaine, impact, urgence, confiance
 
-            # C. LOCALISATION GÉOGRAPHIQUE
             DOMAINES_TERRAIN = {"MÉDICAL", "POLICE", "POMPIER"}
             if domaine in DOMAINES_TERRAIN and not has_lieu:
                 msg = f"🚨 J'ai bien noté l'alerte ({', '.join(corps_trouves)}), mais à quelle ADRESSE GÉOGRAPHIQUE vous trouvez-vous ?" if corps_trouves else "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?"
                 return domaine, 0, [msg], False, domaine, impact, urgence, confiance
 
-            # D. CONTEXTE IT (SOCIÉTÉ / SITE)
             DOMAINES_IT = {"INFRA", "MATÉRIEL", "ACCÈS"}
             if domaine in DOMAINES_IT and not entreprise_trouvee and not has_lieu:
-                return domaine, 0, [
-                    "🏢 CONTEXTE REQUIS : Pour quelle société, agence ou site signalez-vous cet incident ?"], False, domaine, impact, urgence, confiance
+                return domaine, 0, ["🏢 CONTEXTE REQUIS : Pour quelle société, agence ou site signalez-vous cet incident ?"], False, domaine, impact, urgence, confiance
 
-            # E. FRICTION ML CLASSIQUE
-            statut_friction = self.model_friction.predict([texte_original])[0]
-            if statut_friction != "COMPLET":
-                amorce = f"Je vois qu'il s'agit potentiellement d'un cas pour le service {domaine}."
-                if statut_friction == "PRECISION_POMP":
-                    question = random.choice(
-                        ["Y a-t-il des personnes coincées à l'intérieur ?", "Voyez-vous des flammes ou de la fumée ?"])
-                elif "TECH" in statut_friction or domaine in DOMAINES_IT:
-                    question = "Quel est le message d'erreur exact ou l'équipement touché ?"
-                else:
-                    question = "Pouvez-vous donner plus de détails sur la situation ?"
-                return domaine, 0, [f"{amorce} {question}"], False, domaine, impact, urgence, confiance
 
         # ── 4. NOTATION EXPERTE (Override & Escalade)
         ajustements_raisons = []
         override_applique = False
 
-        mots_critiques = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
-                          "arret cardiaque", "respire plus"]
-        for mc in mots_critiques:
-            if mc in texte_propre:
-                impact, urgence = 4, 4
-                ajustements_raisons.append(f"🚀 SUR-NOTATION : Alerte vitale absolue détectée ('{mc}').")
-                override_applique = True
-                break
+        # 🛡️ BOUCLIER ANTI-IRONIE
+        ton_global = self.qualifier._detecter_ton(texte_original)
+        if ton_global == "IRONIE" or any(mot in texte_propre for mot in ["rigole", "mdr", "blague", "lol"]):
+            impact, urgence = 1, 1
+            ajustements_raisons.append("🤡 IRONIE DÉTECTÉE : L'utilisateur plaisante, urgence rétrogradée.")
+            override_applique = True
+
+        if not override_applique:
+            mots_critiques = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
+                              "arret cardiaque", "crise cardiaque", "respire plus"]
+            for mc in mots_critiques:
+                if mc in texte_propre:
+                    impact, urgence = 4, 4
+                    ajustements_raisons.append(f"🚀 SUR-NOTATION : Alerte vitale absolue détectée ('{mc}').")
+                    override_applique = True
+                    break
 
         if not override_applique:
             escalade_requise = False
@@ -288,7 +266,6 @@ class NexusMainSystem:
             domaine_final = domaine
 
         return domaine_final, score, raisons, True, domaine, impact, urgence, confiance
-
 
 # ==============================================================================
 # BOUCLE PRINCIPALE
