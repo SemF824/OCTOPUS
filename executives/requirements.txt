@@ -6,3 +6,4 @@ numpy>=1.24
 torch>=2.0
 transformers>=4.40
 spacy>=3.7
+plotly
