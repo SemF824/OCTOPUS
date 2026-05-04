@@ -4,6 +4,7 @@ import os
 DB_PATH              = "../nexus_bionexus.db"
 MODEL_PATH           = "../pickle_result/nexus_v21_unified.pkl"
 MODEL_FRICTION_PATH  = "../pickle_result/nexus_v21_friction.pkl"
+MODEL_DIALOGUE_PATH  = "../pickle_result/nexus_v30_dialogue.pkl"
 CONFIDENCE_THRESHOLD = 0.45
 
 NEGATION_MARKERS = [
@@ -140,3 +141,15 @@ MATRICE_PRIORITE = [
 ]
 
 RF_PARAMS = {'n_estimators': 350, 'max_depth': 30, 'class_weight': 'balanced', 'random_state': 42, 'n_jobs': -1}
+
+# Dictionnaire de réponses du Bot (Dialogue State Tracking)
+REPONSES_EXPERT_BOT = {
+    "MANQUE_LIEU": "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?",
+    "MANQUE_LIEU_VITAL": "🚨 URGENCE VITALE : Donnez-moi immédiatement votre adresse ou ville exacte !",
+    "MANQUE_CORPS": "🩹 PRÉCISION REQUISE : À quelle partie du corps se situe la blessure ou la douleur ?",
+    "PRECISION_MED_SEVERE": "⚠️ Vous indiquez une blessure sérieuse. Sur 10, quelle est la douleur ? Y a-t-il des saignements ?",
+    "MANQUE_ARME": "⚖️ SÉCURITÉ : Y a-t-il des armes visibles (couteau, arme à feu, etc.) ?",
+    "PRECISION_POMP": "🔥 Y a-t-il des personnes bloquées à l'intérieur ou des blessés ?",
+    "MANQUE_CONTEXTE_IT": "🏢 CONTEXTE REQUIS : Pour quel site ou agence signalez-vous cet incident ?",
+    "MANQUE_ERREUR": "💻 TECHNIQUE : Quel est le message d'erreur exact affiché à l'écran ?"
+}
