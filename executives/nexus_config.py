@@ -153,3 +153,35 @@ REPONSES_EXPERT_BOT = {
     "MANQUE_CONTEXTE_IT": "🏢 CONTEXTE REQUIS : Pour quel site ou agence signalez-vous cet incident ?",
     "MANQUE_ERREUR": "💻 TECHNIQUE : Quel est le message d'erreur exact affiché à l'écran ?"
 }
+
+MOTS_SYMPTOMES_DETAILLES = [
+    "vertige", "vertiges", "nausee", "nausees", "vomissement", "vomissements",
+    "fievre", "sang", "saignement", "saignements", "douleur", "mal", "gonfle",
+    "casse", "respire", "vision", "trouble", "fourmillement", "chaud", "froid",
+    "rien", "non", "oui", "beaucoup", "peu", "fort"
+]
+
+MOTS_IDENTITE = [
+    "ans", "antecedent", "antecedents", "diabete", "asthme", "hypertension",
+    "cardiaque", "allergie", "allergies", "aucun", "sain", "saine", "age", "mois"
+]
+
+# Arbre de décision médical : L'IA choisit sa question selon la zone touchée
+QUESTIONS_CLINIQUES = {
+    "tete": "Ressentez-vous des vertiges, des troubles de la vision ou des nausées ?",
+    "crane": "Ressentez-vous des vertiges, des troubles de la vision ou des nausées ?",
+    "visage": "Ressentez-vous des vertiges, des troubles de la vision ou des nausées ?",
+    "poitrine": "La douleur irradie-t-elle vers le bras gauche ou la mâchoire ? Avez-vous du mal à respirer ?",
+    "thorax": "La douleur irradie-t-elle vers le bras gauche ou la mâchoire ? Avez-vous du mal à respirer ?",
+    "coeur": "La douleur irradie-t-elle vers le bras gauche ou la mâchoire ? Avez-vous du mal à respirer ?",
+    "ventre": "Avez-vous de la fièvre, des vomissements ou remarquez-vous du sang ?",
+    "estomac": "Avez-vous de la fièvre, des vomissements ou remarquez-vous du sang ?",
+    "abdomen": "Avez-vous de la fièvre, des vomissements ou remarquez-vous du sang ?",
+    "dos": "La douleur descend-elle dans les jambes ? Est-ce suite à un choc ?",
+    "colonne": "Ressentez-vous des fourmillements dans les membres ? Pouvez-vous bouger vos pieds ?",
+    "jambe": "Pouvez-vous bouger la jambe ? Y a-t-il une déformation visible ou un gonflement ?",
+    "genou": "Pouvez-vous bouger la jambe ? Y a-t-il une déformation visible ou un gonflement ?",
+    "bras": "Pouvez-vous bouger les doigts ? Y a-t-il une plaie ouverte ?",
+    "epaule": "Pouvez-vous bouger les doigts ? Y a-t-il une plaie ouverte ?",
+    "defaut": "Quels sont les autres symptômes qui accompagnent cela (fièvre, nausées, saignements) ?"
+}
