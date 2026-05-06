@@ -1,10 +1,11 @@
-# main.py — NEXUS V30 (Architecture Multi-Agents / Tri-Cerveaux)
+# main.py — NEXUS V32 (Système Expert - Entonnoir Conversationnel ML)
 import spacy
 import joblib
 import os
 import sqlite3
 import warnings
 import datetime
+import random
 import unicodedata
 import re
 from difflib import get_close_matches
@@ -14,7 +15,7 @@ from nexus_config import *
 
 warnings.filterwarnings("ignore")
 
-# ─── AUTO-CORRECTEUR ORTHOGRAPHIQUE ────────────────────────────────
+# Le dictionnaire maître pour corriger les fautes de frappe de l'utilisateur
 DICTIONNAIRE_MAITRE = set(
     MOTS_LIEUX + MOTS_ARMES + MOTS_CORPS + MOTS_GRAVES +
     SYMPTOMES_GLOBAUX + SYMPTOMES_SEVERES + MOTS_BENINS +
@@ -30,7 +31,6 @@ def corriger_fautes_frappe(texte):
     texte_sans_accents = enlever_accents(texte)
     mots = re.findall(r'\b\w+\b', texte_sans_accents)
     texte_corrige = texte_sans_accents
-
     for mot in set(mots):
         if len(mot) >= 4 and mot not in DICTIONNAIRE_MAITRE:
             corrections = get_close_matches(mot, DICTIONNAIRE_MAITRE, n=1, cutoff=0.75)
@@ -40,7 +40,6 @@ def corriger_fautes_frappe(texte):
     return texte_corrige
 
 
-# ─── MOTEUR LINGUISTIQUE (spaCy) ───────────────────────────────────
 class NexusLinguisticEngine:
     def __init__(self):
         self.nlp = spacy.load("fr_core_news_md")
@@ -52,14 +51,12 @@ class NexusLinguisticEngine:
         for m in MOTS_GRAVES: patterns.append({"label": "ALERTE_VITALE", "pattern": m})
         for m in FICTION_MARKERS: patterns.append({"label": "FICTION", "pattern": m})
         for m in NEGATION_MARKERS: patterns.append({"label": "NEGATION", "pattern": m})
-        for m in MOTS_ENTREPRISES: patterns.append({"label": "ENTREPRISE", "pattern": m})
         self.ruler.add_patterns(patterns)
 
     def analyser(self, texte):
         return self.nlp(corriger_fautes_frappe(texte))
 
 
-# ─── GUARDS & LOGGERS ──────────────────────────────────────────────
 class ShadowLogger:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -76,113 +73,118 @@ class ShadowLogger:
         self.conn.commit()
 
 
-class NegationGuard:
-    def contient_negation(self, doc):
-        text_lower = doc.text.lower()
-        if any(ex in text_lower for ex in ["exercice", "test", "simulation"]): return True, "Exercice détecté."
-        if any(ent.label_ == "FICTION" for ent in doc.ents):
-            if "apres le film" not in text_lower and not ("cinema" in text_lower and "feu" in text_lower):
-                return True, "Contexte de fiction détecté."
-        if [e for e in doc.ents if e.label_ == "NEGATION"] and [e for e in doc.ents if
-                                                                e.label_ in ["ARME", "ALERTE_VITALE"]]:
-            return True, "Négation détectée près d'un danger."
-        return False, ""
+class LocationGuard:
+    """Utilisé uniquement pour l'escalade des scores à la fin (savoir quelle zone du corps est touchée)"""
+
+    def verifier_localisation(self, doc):
+        has_lieu = False
+        corps_trouves = []
+        for ent in doc.ents:
+            if ent.label_ == "CORPS":
+                corps_trouves.append(ent.text)
+            elif ent.label_ in ["LOC", "LIEU"]:
+                mots_entite = enlever_accents(ent.text).split()
+                if not any(c in mots_entite for c in MOTS_CORPS): has_lieu = True
+        return has_lieu, list(set(corps_trouves))
 
 
-# ─── SYSTÈME PRINCIPAL (LE CHEF D'ORCHESTRE) ───────────────────────
 class NexusMainSystem:
     def __init__(self):
-        print("🧠 Initialisation NEXUS V30 (Architecture Tri-Cerveaux)...")
+        print("🧠 Initialisation NEXUS V32 (Entonnoir Conversationnel Machine Learning)...")
         self.engine = NexusLinguisticEngine()
+        self.logger = ShadowLogger()
+        self.location_guard = LocationGuard()
 
-        # 1. LE CERVEAU DE DÉCISION (Domaine, Impact, Urgence)
+        # 1. CERVEAU D'ÉVALUATION (Domaine, Impact, Urgence)
         self.model_unified = joblib.load(MODEL_PATH)
 
-        # 2. LE CERVEAU ÉMOTIONNEL (Ton, Sentiment, Banalité)
-        self.model_sentiment = joblib.load(MODEL_FRICTION_PATH)
-
-        # 3. LE CERVEAU DE DIALOGUE (Traque des infos manquantes)
-        # Assure-toi d'avoir entraîné ce modèle avec le script nexus_dialogue_forge.py !
-        if os.path.exists("../pickle_result/nexus_v30_dialogue.pkl"):
-            self.model_dialogue = joblib.load("../pickle_result/nexus_v30_dialogue.pkl")
+        # 2. CERVEAU DE DIALOGUE (L'Entonnoir appris via le CSV)
+        chemin_dialogue = "../pickle_result/nexus_v32_dialogue.pkl"
+        if os.path.exists(chemin_dialogue):
+            self.model_dialogue = joblib.load(chemin_dialogue)
         else:
-            print("⚠️ Attention: Cerveau de dialogue introuvable. Mode dégradé.")
+            print(f"⚠️ ATTENTION : Le modèle de dialogue {chemin_dialogue} est introuvable !")
+            print("Lancez le script nexus_dialogue_forge.py en premier.")
             self.model_dialogue = None
 
-        self.guard = NegationGuard()
-        self.logger = ShadowLogger()
-
-        # Dictionnaire des questions générées par le Cerveau de Dialogue
-        self.dictionnaire_questions = {
-            "MANQUE_LIEU": "🚨 LOCALISATION MANQUANTE : À quelle adresse ou ville vous trouvez-vous ?",
-            "MANQUE_LIEU_VITAL": "🚨 URGENCE VITALE : Donnez-moi immédiatement votre adresse ou ville exacte !",
-            "MANQUE_CORPS": "🩹 PRÉCISION REQUISE : À quelle partie du corps se situe la blessure ou la douleur ?",
-            "PRECISION_MED_SEVERE": "⚠️ Vous indiquez une blessure sérieuse. Sur 10, quelle est la douleur ? Y a-t-il des saignements ?",
-            "MANQUE_ARME": "⚖️ SÉCURITÉ : Y a-t-il des armes visibles (couteau, arme à feu, etc.) ?",
-            "PRECISION_POMP": "🔥 Y a-t-il des personnes bloquées à l'intérieur ou des blessés ?",
-            "MANQUE_CONTEXTE_IT": "🏢 CONTEXTE REQUIS : Pour quel site ou agence signalez-vous cet incident ?",
-            "MANQUE_ERREUR": "💻 TECHNIQUE : Quel est le message d'erreur exact affiché à l'écran ?"
+        # 3. LE DICTIONNAIRE DE RÉPONSES
+        self.phrases_bot = {
+            "DEMANDE_CORPS": "🩹 À quelle partie du corps se situe le problème ?",
+            "DEMANDE_SYMPTOMES": "🩺 Quels sont les symptômes précis (vertiges, saignements, gonflement, type de douleur) ?",
+            "DEMANDE_ANTECEDENTS": "👤 Quel est l'âge de la victime et a-t-elle des antécédents médicaux connus ?",
+            "DEMANDE_ARME": "⚖️ Y a-t-il des armes visibles sur l'agresseur ou des blessés ?",
+            "DEMANDE_LIEU": "🚨 Pour déclencher l'intervention, j'ai besoin de l'adresse ou de la ville exacte :"
         }
 
     def evaluer_ticket(self, texte_original: str, force_score: bool = False):
         doc = self.engine.analyser(texte_original)
         texte_propre = doc.text
 
-        # --- ÉTAPE 1 : CERVEAU DE DÉCISION ---
+        # ── 1. OVERRIDES STRICTS (Sécurité pour forcer le bon domaine si le ML hésite) ──
+        domaine_force = None
+        if any(d in texte_propre for d in MOTS_DELITS + ["braquage", "vol", "voleur"]):
+            domaine_force = "POLICE"
+        elif any(s in texte_propre for s in ["incendie", "feu", "fumee"]):
+            domaine_force = "POMPIER"
+
+        # On prédit le domaine de base pour l'affichage visuel
         pred_uni = self.model_unified.predict([texte_original])[0]
-        domaine = pred_uni[0]
+        domaine = domaine_force if domaine_force else pred_uni[0]
+
+        # ==============================================================================
+        # ── 2. LA MAGIE DE LA V32 : LE CERVEAU DE DIALOGUE GÈRE TOUT SEUL
+        # ==============================================================================
+        if not force_score and self.model_dialogue is not None:
+
+            # Le modèle lit tout l'historique et prédit la PROCHAINE ÉTAPE
+            prochaine_etape = self.model_dialogue.predict([texte_original])[0]
+
+            # Tant que ce n'est pas COMPLET, on pose la question qu'il a choisie
+            if prochaine_etape != "COMPLET":
+                question_a_poser = self.phrases_bot.get(prochaine_etape, "Pouvez-vous préciser votre situation ?")
+                return domaine, 0, [question_a_poser], False, domaine, 0, 0, 0.0
+
+        # ==============================================================================
+        # ── 3. VALIDATION ET NOTATION FINALE (Quand c'est "COMPLET")
+        # ==============================================================================
         impact = int(pred_uni[1])
         urgence = int(pred_uni[2])
-        probas = self.model_unified.predict_proba([texte_original])
-        confiance = float(max(probas[0][0])) if len(probas) > 0 else 0.5
+        confiance = float(max(self.model_unified.predict_proba([texte_original])[0])) if not domaine_force else 0.99
 
-        is_negated, raison = self.guard.contient_negation(doc)
-        if is_negated:
-            return "INFORMATION / SÉCURITÉ", 1.0, [f"⚠️ {raison}"], True, "INFO", 1, 1, confiance
+        has_lieu, corps_trouves = self.location_guard.verifier_localisation(doc)
 
-        # --- ÉTAPE 2 : CERVEAU DE DIALOGUE (Poser les questions) ---
-        if not force_score and self.model_dialogue:
-            mots_detresse = ["au secours", "a l'aide", "aidez moi", "vite"]
-            if any(texte_propre.strip() == md for md in mots_detresse) or (
-                    len(texte_propre) < 15 and not any(ent.label_ for ent in doc.ents)):
-                return domaine, 0, [
-                    "🚨 DÉTRESSE : Que se passe-t-il exactement et où êtes-vous ?"], False, domaine, impact, urgence, confiance
-
-            # Le modèle expert devine ce qui manque dans l'historique de la conversation
-            statut_dialogue = self.model_dialogue.predict([texte_original])[0]
-
-            if "COMPLET" not in statut_dialogue:
-                question = self.dictionnaire_questions.get(statut_dialogue,
-                                                           "Pouvez-vous me donner plus de détails sur la situation ?")
-                return domaine, 0, [question], False, domaine, impact, urgence, confiance
-
-        # --- ÉTAPE 3 : CERVEAU ÉMOTIONNEL ET NOTATION EXPERTE ---
-        # Ici, l'ancien modèle friction sert à analyser le "sentiment" général de la demande
-        sentiment_ia = self.model_sentiment.predict([texte_original])[0]
         ajustements_raisons = []
         override_applique = False
 
-        # 3a. Sur-Notation absolue (Vital)
-        mots_critiques = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
-                          "arret cardiaque", "respire plus"]
-        for mc in mots_critiques:
+        # A. Sur-notation Vitale Absolue
+        mots_vitaux = ["reveille plus", "inconscient", "overdose", "crash", "bombe", "terrorist", "attentat",
+                       "arret cardiaque", "respire plus", "hemorragie"]
+        for mc in mots_vitaux:
             if mc in texte_propre:
                 impact, urgence = 4, 4
                 ajustements_raisons.append(f"🚀 SUR-NOTATION : Alerte vitale absolue détectée ('{mc}').")
                 override_applique = True
                 break
 
-                # 3b. Utilisation du Cerveau Émotionnel (Sentiment)
+        # B. Escalade Sévère (Si pas vital, mais aggravant)
         if not override_applique:
-            # Si le modèle émotionnel détecte une anomalie bénigne ou une simple demande de précision
-            if sentiment_ia in ["DEMANDE_DETAILS_GENERAUX", "BENIN"]:
-                has_grave = any(ent.label_ in ["ARME", "ALERTE_VITALE"] for ent in doc.ents)
-                if not has_grave:
-                    impact, urgence = 1, 1
-                    ajustements_raisons.append(
-                        f"🛡️ AJUSTEMENT (Cerveau Émotionnel) : Ton de la demande jugé bénin ({sentiment_ia}).")
+            escalade_requise = False
 
-        # Calcul final
+            # L'IA vérifie le corps
+            if any(c in corps_trouves for c in CORPS_SENSIBLES):
+                escalade_requise = True
+                ajustements_raisons.append("📈 ESCALADE : Partie du corps sensible touchée (Urgence rehaussée).")
+
+            # L'IA vérifie les symptômes donnés
+            elif any(ss in texte_propre for ss in
+                     SYMPTOMES_SEVERES) or "vertige" in texte_propre or "sang" in texte_propre:
+                escalade_requise = True
+                ajustements_raisons.append("📈 ESCALADE : Symptômes cliniques aggravants détectés.")
+
+            if escalade_requise:
+                impact, urgence = max(impact, 3), max(urgence, 3)
+
+        # Calcul du score final 1-10
         score = MATRICE_PRIORITE[impact - 1][urgence - 1] if 1 <= impact <= 4 and 1 <= urgence <= 4 else 1.0
         raisons = [f"Impact IA : {impact}/4", f"Urgence IA : {urgence}/4", f"Confiance : {confiance:.1%}"]
         raisons.extend(ajustements_raisons)
@@ -190,10 +192,13 @@ class NexusMainSystem:
         return domaine, score, raisons, True, domaine, impact, urgence, confiance
 
 
+# ==============================================================================
+# BOUCLE PRINCIPALE (Multi-tours - 5 tentatives max)
+# ==============================================================================
 if __name__ == "__main__":
     nexus = NexusMainSystem()
     print("\n" + "=" * 52)
-    print("🚀  NEXUS V30 — COMMAND CENTER (Tri-Cerveaux)")
+    print("🚀  NEXUS V32 — COMMAND CENTER (IA Data-Driven)")
     print("=" * 52)
     print("   Tapez 'exit' ou 'q' pour quitter.\n")
 
@@ -205,27 +210,36 @@ if __name__ == "__main__":
         ticket_complet = False
         tentatives = 0
 
-        while not ticket_complet and tentatives < 2:
+        while not ticket_complet and tentatives < 5:
             (domaine, score, raisons, ticket_complet, dom_brut, imp_brut, urg_brut, conf) = nexus.evaluer_ticket(
                 ticket_final, force_score=False)
 
             if not ticket_complet:
-                print(f"\n   🎯 Domaine pressenti : {domaine}")
-                print(f"   🛑 {raisons[0]}")
-                complement = input("   💬 Précisez SVP : ").strip()
-                if complement.lower() in {"exit", "q", "quit"}: break
+                print(f"\n   🎯 Domaine estimé : {domaine}")
+                print(f"   🤖 NEXUS : {raisons[0]}")
+                complement = input("   💬 Vous : ").strip()
+                if complement.lower() in {"exit", "q", "quit"}:
+                    ticket_final = "exit"
+                    break
+
+                # LA CONCATÉNATION MAGIQUE DE L'HISTORIQUE !
                 ticket_final = ticket_final + ". " + complement
                 tentatives += 1
 
         if ticket_final.lower() in {"exit", "q", "quit"}: break
 
+        # Si au bout de 5 tentatives ce n'est pas fini, on force le score (évite les boucles infinies)
         if not ticket_complet:
             (domaine, score, raisons, ticket_complet, dom_brut, imp_brut, urg_brut, conf) = nexus.evaluer_ticket(
                 ticket_final, force_score=True)
 
         niveau = "🔴 CRITIQUE" if score >= 8 else "🟠 HAUTE" if score >= 5 else "🟢 BASSE"
-        print(f"\n   ✅ TICKET QUALIFIÉ")
+
+        print(f"\n   ✅ DOSSIER VALIDÉ ET TRANSMIS")
         print(f"   🎯 {domaine}  |  🔢 {score}/10  →  {niveau}")
-        for r in raisons: print(f"   💡 {r}")
+        print(f"   📄 Résumé du dossier : {ticket_final}")
+        for r in raisons:
+            print(f"   💡 {r}")
         print()
+
         nexus.logger.log(raw, ticket_final, dom_brut, imp_brut, urg_brut, conf)
