@@ -10,3 +10,4 @@ plotly
 google-genai
 asyncio
 pydantic
+ollama>=0.2.0
