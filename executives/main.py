@@ -45,33 +45,38 @@ class NexusAgenticSystem:
 
     async def generer_question_bot(self, texte_utilisateur, domaine, friction):
         prompt = f"""
-        Tu es un agent de triage d'urgence (Humain, empathique, très professionnel).
+        Tu es un agent de régulation d'urgence (Humain, empathique, très professionnel).
         DOMAINE IDENTIFIÉ : {domaine}
         INFORMATION MANQUANTE : {friction}
         HISTORIQUE DU CLIENT : "{texte_utilisateur}"
 
         RÈGLES STRICTES :
-        1. Pose UNE SEULE question courte pour obtenir l'information manquante (ex: Demande l'adresse si c'est MANQUE_LIEU).
-        2. NE SOIS PAS INTRUSIF.
-        3. Ne te répète pas.
-        4. Va droit au but sans dire bonjour.
+        1. Pose UNE SEULE question courte en bon français pour obtenir l'information manquante.
+        2. NE SOIS PAS INTRUSIF (ex: Ne demande pas un code postal exact si la ville suffit, ne demande pas le nom de famille).
+        3. Ne te répète pas. Si le client a déjà donné l'info dans l'historique, adapte ta question.
+        4. Ne dis pas bonjour. Va droit au but.
 
         Réponds DIRECTEMENT par la question.
         """
         try:
+            # Temperature à 0.3 pour que Mistral reste très factuel et précis
             reponse = await asyncio.wait_for(
                 self.client_llm.chat(model=MODEL_DIALOGUE, messages=[{'role': 'user', 'content': prompt}],
-                                     options={'temperature': 0.4}),
+                                     options={'temperature': 0.3}),
                 timeout=30.0
             )
             return reponse['message']['content'].strip().replace('"', '')
-        except:
-            return "Pouvez-vous me donner plus de précisions, notamment sur le lieu ou la situation ?"
+        except asyncio.TimeoutError:
+            return "La connexion est lente. Pouvez-vous détailler votre situation ou votre position géographique ?"
+        except Exception as e:
+            return "Pouvez-vous m'en dire plus ?"
 
     async def traiter_interaction(self, ticket_historique):
         domaine, score, friction = self.evaluator.evaluer_ticket(ticket_historique)
+
         if str(friction).upper() == "COMPLET":
             return domaine, score, friction, True, ""
+
         question_bot = await self.generer_question_bot(ticket_historique, domaine, friction)
         return domaine, score, friction, False, question_bot
 
@@ -83,7 +88,7 @@ async def run_terminal():
     print("\n" + "=" * 52)
     print(f"🚀 NEXUS COMMAND CENTER — HYBRID AI ({MODEL_DIALOGUE})")
     print("=" * 52)
-    print("   Tapez 'exit' pour quitter. Appuyez sur ENTRÉE à vide pour passer une question.\n")
+    print("   Tapez 'exit' pour quitter. Appuyez sur ENTRÉE à vide pour forcer la validation.\\n")
 
     while True:
         raw = input("📝 Client : ").strip()
@@ -101,12 +106,12 @@ async def run_terminal():
                 print(f"   🤖 NEXUS ({domaine} | Score: {score}/10) : {question_bot}")
                 complement = input("   💬 Client : ").strip()
 
-                # OPTION DE SKIP (Entrée à vide)
+                # OPTION DE SKIP
                 if complement == "":
-                    print(
-                        "   ⚠️ [AVERTISSEMENT] Sans plus de détails, l'urgence de votre situation pourrait être sous-évaluée.")
+                    print("   ⚠️ [AVERTISSEMENT] Vous n'avez pas fourni de détails supplémentaires.")
+                    print("   ⚠️ L'urgence de votre situation pourrait être sous-évaluée.")
                     choix = input("   Voulez-vous transmettre le dossier tel quel ? (O/N) : ").strip().upper()
-                    if choix in ['O', 'OUI']:
+                    if choix in ['O', 'OUI', 'Y', 'YES']:
                         print("   ⏩ Transmission forcée...")
                         break
                     else:
