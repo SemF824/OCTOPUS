@@ -149,7 +149,7 @@ class NexusMainSystem:
         # ==============================================================================
         impact = int(pred_uni[1])
         urgence = int(pred_uni[2])
-        confiance = float(max(self.model_unified.predict_proba([texte_original])[0])) if not domaine_force else 0.99
+        confiance = float(max(self.model_unified.predict_proba([texte_original])[0][0])) if not domaine_force else 0.99
 
         has_lieu, corps_trouves = self.location_guard.verifier_localisation(doc)
 
