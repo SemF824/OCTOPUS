@@ -3,10 +3,12 @@ import os
 
 # Chemins des bases de données et modèles ML
 DB_PATH = "../nexus_bionexus.db"
-# Le futur modèle Scikit-Learn que tu vas entraîner sur ton Golden Dataset :
-MODEL_UNIFIED_PATH = "../pickle_result/nexus_v21_unified.pkl"
+
+# Ton futur modèle Kaggle
+MODEL_UNIFIED_PATH = "../pickle_result/nexus_v32_unified.pkl"
 
 # Configurations des Modèles LLM (Ollama)
-MODEL_EVALUATOR = "qwen2.5-coder" # Utilisé en arrière-plan pour la forge/logique
-MODEL_DIALOGUE = "ministral-3:8b"  # Passage sur le modèle français léger
+MODEL_EVALUATOR = "qwen2.5-coder" # Utilisé sur Kaggle
+MODEL_DIALOGUE = "mistral"        # Le modèle français léger et naturel
+
 CONFIDENCE_THRESHOLD = 0.50
