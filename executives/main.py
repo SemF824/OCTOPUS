@@ -69,17 +69,24 @@ class NexusAgenticSystem:
         self.evaluator = QualificationEngine()
         self.client_llm = AsyncClient()
         self.executor = TaskExecutor()
+        self.llm_en_ligne = False
 
     async def prechauffer_cerveau(self):
         print(f"🔥 Pré-chauffage du modèle {MODEL_DIALOGUE} en cours...")
         try:
             await self.client_llm.chat(model=MODEL_DIALOGUE, messages=[{'role': 'user', 'content': 'ping'}],
                                        options={'num_predict': 1})
+            self.llm_en_ligne = True
             print("✅ Modèle chargé en mémoire vive ! Prêt pour une réponse instantanée.")
         except Exception as e:
-            print(f"⚠️ Impossible de pré-chauffer le modèle. Erreur: {e}")
+            self.llm_en_ligne = False
+            print(f"⚠️ ERREUR CRITIQUE : Impossible de joindre Ollama. Vérifiez que 'ollama serve' tourne.")
+            print(f"Détail technique : {e}")
 
     async def generer_question_bot(self, texte_utilisateur, domaine, friction):
+        if not self.llm_en_ligne:
+            return "[SYSTÈME DE DIALOGUE HORS LIGNE] Veuillez préciser la situation exacte."
+
         prompt = f"""
         Tu es un agent de régulation d'urgence (Humain, empathique, très professionnel).
         DOMAINE IDENTIFIÉ : {domaine}
@@ -102,9 +109,12 @@ class NexusAgenticSystem:
             )
             return reponse['message']['content'].strip().replace('"', '')
         except asyncio.TimeoutError:
+            print("\n   ⚠️ [ALERTE SYSTÈME] Timeout de l'API Ollama (Lenteur serveur).")
             return "La connexion est lente. Pouvez-vous détailler votre situation ou votre position géographique ?"
         except Exception as e:
-            return "Pouvez-vous m'en dire plus ?"
+            print(f"\n   ⚠️ [ALERTE SYSTÈME] Crash du modèle de dialogue : {e}")
+            self.llm_en_ligne = False
+            return "[SYSTÈME DE DIALOGUE DÉCONNECTÉ] Veuillez m'en dire plus."
 
     async def traiter_interaction(self, ticket_historique):
         domaine, score, friction = self.evaluator.evaluer_ticket(ticket_historique)
@@ -123,7 +133,7 @@ async def run_terminal():
     print("\n" + "=" * 60)
     print(f"🚀 NEXUS COMMAND CENTER — HYBRID AI ({MODEL_DIALOGUE})")
     print("=" * 60)
-    print("   Tapez 'exit' pour quitter. Appuyez sur ENTRÉE à vide pour forcer la validation.\\n")
+    print("   Tapez 'exit' pour quitter. Appuyez sur ENTRÉE à vide pour forcer la validation.\n")
 
     while True:
         raw = input("📝 Client : ").strip()
@@ -141,7 +151,6 @@ async def run_terminal():
                 print(f"   🤖 NEXUS ({domaine} | Score partiel: {score}/10) : {question_bot}")
                 complement = input("   💬 Client : ").strip()
 
-                # RESTAURATION DE TON OPTION DE SKIP SÉCURISÉE
                 if complement == "":
                     print("   ⚠️ [AVERTISSEMENT] Vous n'avez pas fourni de détails supplémentaires.")
                     print("   ⚠️ L'urgence de votre situation pourrait être sous-évaluée.")
@@ -162,7 +171,6 @@ async def run_terminal():
 
         if ticket_final == "exit": break
 
-        # Évaluation finale post-dialogue
         if not ticket_complet:
             domaine, score, friction = nexus.evaluator.evaluer_ticket(ticket_final)
 

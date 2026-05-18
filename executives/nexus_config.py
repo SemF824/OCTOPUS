@@ -5,7 +5,7 @@ import os
 DB_PATH = "../nexus_bionexus.db"
 
 # Ton futur modèle Kaggle
-MODEL_UNIFIED_PATH = "../pickle_result/nexus_v32_unified.pkl"
+MODEL_UNIFIED_PATH = "../pickle_result/nexus_v33_unified.pkl"
 
 # Configurations des Modèles LLM (Ollama)
 MODEL_EVALUATOR = "qwen2.5-coder" # Utilisé sur Kaggle
