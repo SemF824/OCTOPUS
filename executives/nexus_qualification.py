@@ -1,6 +1,7 @@
 # executives/nexus_qualification.py
 import joblib
 import os
+import numpy as np
 from nexus_config import MODEL_UNIFIED_PATH
 
 
@@ -9,49 +10,43 @@ class QualificationEngine:
         if os.path.exists(MODEL_UNIFIED_PATH):
             self.model = joblib.load(MODEL_UNIFIED_PATH)
             self.mode = "ML"
-            print(f"🔌 Modèle ML chargé : {MODEL_UNIFIED_PATH}")
+            print(f"🔌 Cerveau Unifié ML chargé : {MODEL_UNIFIED_PATH}")
         else:
             self.model = None
             self.mode = "SIMULATION"
             print("⚠️ Aucun modèle ML trouvé. Mode SIMULATION activé.")
 
     def calculer_score_logique(self, severite, impact, cible):
-        # Formule : ((Sévérité * 2) + Impact + Cible) / 2
-        return ((severite * 2) + impact + cible) / 2
+        """Formule stratégique : Poids double sur la sévérité."""
+        try:
+            return ((float(severite) * 2) + float(impact) + float(cible)) / 2
+        except ValueError:
+            # Sécurité si le modèle ML renvoie des caractères inattendus
+            return 5.0
 
     def evaluer_ticket(self, texte):
         if self.mode == "ML":
-            prediction = self.model.predict([texte])[0]
+            try:
+                prediction = self.model.predict([texte])[0]
 
-            # 🔄 COMPATIBILITÉ AVEC L'ANCIEN MODÈLE V21 (3 variables)
-            if len(prediction) == 3:
-                domaine = prediction[0]
-                impact = int(prediction[1])
-                urgence = int(prediction[2])  # Dans l'ancien modèle, c'était l'urgence
+                # Le pipeline V33 crache exactement 5 variables
+                if len(prediction) == 5:
+                    domaine = str(prediction[0])
+                    severite = int(float(prediction[1]))
+                    impact = int(float(prediction[2]))
+                    cible = int(float(prediction[3]))
+                    friction = str(prediction[4])
 
-                # On adapte l'ancienne "urgence" à la nouvelle "sévérité"
-                score = self.calculer_score_logique(severite=urgence, impact=impact, cible=0)
-
-                # L'ancien modèle ne prédisait pas la friction. On la simule pour tester Llama.
-                if domaine in ["ACCÈS", "DIGITAL SUPPORT", "MATÉRIEL"]:
-                    friction = "MANQUE_IDENTIFIANT"
-                elif domaine == "MÉDICAL":
-                    friction = "MANQUE_SYMPTOMES"
+                    score = self.calculer_score_logique(severite, impact, cible)
+                    return domaine, score, friction
                 else:
-                    friction = "MANQUE_LIEU"
+                    print(f"⚠️ Format de prédiction inattendu (longueur {len(prediction)}).")
+                    return "ERREUR_ROUTAGE", 10.0, "COMPLET"
 
-                return domaine, score, friction
-
-            # 🚀 POUR LE FUTUR NOUVEAU MODÈLE (5 variables)
-            else:
-                domaine = prediction[0]
-                score = self.calculer_score_logique(int(prediction[1]), int(prediction[2]), int(prediction[3]))
-                friction = prediction[4]
-                return domaine, score, friction
-
+            except Exception as e:
+                print(f"❌ Erreur lors de l'inférence ML : {e}")
+                return "ERREUR_SYSTEME", 10.0, "COMPLET"
         else:
-            # MODE SIMULATION (Si pas de .pkl du tout)
-            domaine = "MÉDICAL" if "mal" in texte.lower() else "DIGITAL SUPPORT"
-            score = 2.5
-            friction = "MANQUE_LIEU"
-            return domaine, score, friction
+            # Fallback en développement
+            domaine = "MÉDICAL" if "sang" in texte.lower() else "DIGITAL SUPPORT"
+            return domaine, 2.5, "MANQUE_LIEU"

@@ -8,7 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Chemins adaptés à la sortie Kaggle (Place les fichiers dans le même dossier ou ajuste le chemin)
-CSV_PATH = "../nexus_dataset_v33_premium.csv"
+CSV_PATH = "../datasets/nexus_dataset_v33_premium.csv"
 MODEL_PATH = "../pickle_result/nexus_v33_unified.pkl"
 AUDIT_DIR = "../audit"
 

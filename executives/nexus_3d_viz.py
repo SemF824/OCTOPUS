@@ -10,8 +10,8 @@ import os
 warnings.filterwarnings("ignore")
 
 # --- 1. CONFIGURATION ---
-CSV_PATH = "../datasets/nexus_dataset_v32.csv"
-MODEL_PATH = "../pickle_result/nexus_v32_unified.pkl"
+CSV_PATH = "../datasets/nexus_dataset_v33_premium.csv"
+MODEL_PATH = "../pickle_result/nexus_v33_unified.pkl"
 SAMPLE_SIZE = 2500  # Limite pour maintenir une navigation 3D fluide
 
 print("🔍 1. Chargement de l'encodeur TF-IDF depuis le modèle V33...")

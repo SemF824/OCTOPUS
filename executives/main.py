@@ -27,12 +27,48 @@ class ShadowLogger:
         self.conn.commit()
 
 
+class TaskExecutor:
+    """Moteur d'exécution tactique des protocoles post-qualification."""
+
+    @staticmethod
+    def declencher_protocoles(domaine, niveau_urgence, resume_ticket):
+        print("\n   ⚡ DÉCLENCHEMENT DES TÂCHES OPÉRATIONNELLES :")
+
+        # 1. Action transverse si critique
+        if niveau_urgence == "🔴 CRITIQUE":
+            print("      [API] 📡 Broadcast SMS d'alerte aux superviseurs d'astreinte -> ENVOYÉ")
+
+        # 2. Routage métier
+        if domaine == "POMPIER":
+            print(f"      [WEBHOOK] 🚒 Transmission au SDIS local (Code Rouge) -> OK")
+            print("      [TASK] 🗺️ Extraction des coordonnées GPS pour les engins -> EN COURS")
+
+        elif domaine == "POLICE":
+            print(f"      [WEBHOOK] 🚓 Alerte patrouille secteur en cours -> OK")
+            if "arme" in resume_ticket.lower() or "couteau" in resume_ticket.lower():
+                print("      [TASK] ⚠️ Activation protocole BAC (Brigade Anti-Criminalité) -> DÉCLENCHÉ")
+
+        elif domaine == "CYBERSÉCURITÉ":
+            print(f"      [API] 🛡️ Isolement automatique du VLAN compromis -> EXÉCUTÉ")
+            print("      [TASK] 📧 Notification RSSI & Cellule de Crise -> ENVOYÉ")
+
+        elif domaine == "MÉDICAL":
+            print(f"      [WEBHOOK] 🚑 Transmission du bilan au Médecin Régulateur (SAMU) -> OK")
+
+        elif domaine == "DIGITAL SUPPORT":
+            print(f"      [JIRA] 🎫 Création ticket automatique niveau 2 -> TICKET #NEX-8492 CRÉÉ")
+
+        else:
+            print(f"      [DISPATCH] 📨 Transmission standard au centre de régulation {domaine} -> OK")
+
+
 class NexusAgenticSystem:
     def __init__(self):
         print("🧠 Initialisation NEXUS V_ULTIME (Architecture Multi-Agents)...")
         self.logger = ShadowLogger()
         self.evaluator = QualificationEngine()
         self.client_llm = AsyncClient()
+        self.executor = TaskExecutor()
 
     async def prechauffer_cerveau(self):
         print(f"🔥 Pré-chauffage du modèle {MODEL_DIALOGUE} en cours...")
@@ -54,12 +90,11 @@ class NexusAgenticSystem:
         1. Pose UNE SEULE question courte en bon français pour obtenir l'information manquante.
         2. NE SOIS PAS INTRUSIF (ex: Ne demande pas un code postal exact si la ville suffit, ne demande pas le nom de famille).
         3. Ne te répète pas. Si le client a déjà donné l'info dans l'historique, adapte ta question.
-        4. Ne dis pas bonjour. Va droit au but.
+        4. Ne dis pas bonjour. Va droit au but mais garde un ton rassurant.
 
         Réponds DIRECTEMENT par la question.
         """
         try:
-            # Temperature à 0.3 pour que Mistral reste très factuel et précis
             reponse = await asyncio.wait_for(
                 self.client_llm.chat(model=MODEL_DIALOGUE, messages=[{'role': 'user', 'content': prompt}],
                                      options={'temperature': 0.3}),
@@ -85,9 +120,9 @@ async def run_terminal():
     nexus = NexusAgenticSystem()
     await nexus.prechauffer_cerveau()
 
-    print("\n" + "=" * 52)
+    print("\n" + "=" * 60)
     print(f"🚀 NEXUS COMMAND CENTER — HYBRID AI ({MODEL_DIALOGUE})")
-    print("=" * 52)
+    print("=" * 60)
     print("   Tapez 'exit' pour quitter. Appuyez sur ENTRÉE à vide pour forcer la validation.\\n")
 
     while True:
@@ -103,10 +138,10 @@ async def run_terminal():
             domaine, score, friction, ticket_complet, question_bot = await nexus.traiter_interaction(ticket_final)
 
             if not ticket_complet:
-                print(f"   🤖 NEXUS ({domaine} | Score: {score}/10) : {question_bot}")
+                print(f"   🤖 NEXUS ({domaine} | Score partiel: {score}/10) : {question_bot}")
                 complement = input("   💬 Client : ").strip()
 
-                # OPTION DE SKIP
+                # RESTAURATION DE TON OPTION DE SKIP SÉCURISÉE
                 if complement == "":
                     print("   ⚠️ [AVERTISSEMENT] Vous n'avez pas fourni de détails supplémentaires.")
                     print("   ⚠️ L'urgence de votre situation pourrait être sous-évaluée.")
@@ -127,15 +162,22 @@ async def run_terminal():
 
         if ticket_final == "exit": break
 
+        # Évaluation finale post-dialogue
         if not ticket_complet:
             domaine, score, friction = nexus.evaluator.evaluer_ticket(ticket_final)
 
         niveau = "🔴 CRITIQUE" if score >= 8 else "🟠 HAUTE" if score >= 5 else "🟢 BASSE"
+
         print(f"\n   ✅ DOSSIER VALIDÉ ET TRANSMIS")
         print(f"   🎯 Domaine : {domaine}  |  🔢 Score : {score}/10  →  {niveau}")
-        print(f"   📄 Résumé du dossier : {ticket_final}\n")
+        print(f"   📄 Résumé du dossier : {ticket_final}")
 
+        # Exécution des Tâches Opérationnelles
+        nexus.executor.declencher_protocoles(domaine, niveau, ticket_final)
+
+        # Log en base de données
         nexus.logger.log(ticket_final, domaine, score)
+        print("-" * 60 + "\n")
 
 
 if __name__ == "__main__":

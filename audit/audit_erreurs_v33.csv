@@ -1,0 +1,6 @@
+texte,domaine,severite,impact,cible,friction,pred_domaine,pred_severite,pred_impact,pred_cible,pred_friction
+"Aidez-moi, mon chien est perdu!",POLICE,2,1,0,MANQUE_LIEU,ANIMALIER,2,1,0,MANQUE_LIEU
+Il y a une fuite de gaz dans le bâtiment !,RISQUES ENVIRONNEMENTAUX,4,2,0,MANQUE_LIEU,POMPIER,4,2,0,MANQUE_LIEU
+Chien sauvage à proximité.,ANIMALIER,3,2,2,MANQUE_IDENTIFIANT,ANIMALIER,1,4,2,MANQUE_IDENTIFIANT
+Route cassée ! Panique !,SERVICES URBAINS,4,1,0,MANQUE_LIEU,SERVICES URBAINS,4,2,0,MANQUE_LIEU
+Chien sauvage à proximité,ANIMALIER,1,4,0,MANQUE_LIEU,ANIMALIER,1,4,2,MANQUE_IDENTIFIANT
