@@ -1337,7 +1337,7 @@ Il y a un étrange bruit de machine à l'intérieur du bâtiment. Les projecteur
 "Je reçois une alerte de sécurité intense, la musique s'arrête et le système d'alarme ne répond plus.",CYBERSÉCURITÉ,4,1,0,MANQUE_LIEU
 "Une panne d'électricité soudaine, tout le bâtiment est noir. Des bruits de machines erratiques se font entendre à travers les couloirs.",CYBERSÉCURITÉ,4,1,0,MANQUE_LIEU
 URGENCE CYBER : Fuite de données VIP - Serveur compromis,CYBERSÉCURITÉ,4,1,0,MANQUE_LIEU
-"Aidez-moi, mon chien est perdu!",POLICE,2,1,0,MANQUE_LIEU
+"Aidez-moi, mon chien est perdu!",ANIMALIER,2,1,0,MANQUE_LIEU
 Un type bizarre passe près de moi. Il est en train de rôder!,POLICE,3,2,0,MANQUE_LIEU
 Il y a un homme qui s'éloigne de la foule. Je pense qu'il est dangereux!,POLICE,3,2,0,MANQUE_LIEU
 Un individu bizarre passe près de moi. Il ne va pas bien!,POLICE,3,2,0,MANQUE_LIEU
@@ -1620,7 +1620,7 @@ Alerte nuage chimique ! Mon usine est en feu !,RISQUES ENVIRONNEMENTAUX,4,1,0,MA
 Il y a un gaz dangereux dans la zone !,RISQUES ENVIRONNEMENTAUX,3,2,0,MANQUE_LIEU
 "Les fumées sont noires, il faut fuir !",RISQUES ENVIRONNEMENTAUX,4,2,0,MANQUE_LIEU
 Mon système de sécurité est défaillant !,RISQUES ENVIRONNEMENTAUX,3,2,0,MANQUE_LIEU
-Il y a une fuite de gaz dans le bâtiment !,RISQUES ENVIRONNEMENTAUX,4,2,0,MANQUE_LIEU
+Il y a une fuite de gaz dans le bâtiment !,POMPIER,4,2,0,MANQUE_LIEU
 "Bonjour mon petit ami, j'ai un gros problème avec mon ordinateur. Mon serveur DNS est down et je ne peux pas accéder à internet. J'ai besoin d'aide rapidement.",DIGITAL SUPPORT,4,1,0,MANQUE_LIEU
 "Salut, mon bon vieux PC. Mon serveur DNS est défaillant et je n'ai plus accès à internet. J'espère que quelqu'un peut m'aider rapidement.",DIGITAL SUPPORT,4,1,0,MANQUE_LIEU
 "Ma chère ordinateur, mon serveur DNS ne veut pas démarrer et je suis perdue. Je vais vraiment avoir besoin de votre aide.",DIGITAL SUPPORT,4,1,0,MANQUE_LIEU

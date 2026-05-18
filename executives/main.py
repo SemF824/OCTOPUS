@@ -68,7 +68,6 @@ class NexusAgenticSystem:
         self.logger = ShadowLogger()
         self.evaluator = QualificationEngine()
         self.client_llm = AsyncClient()
-        self.executor = TaskExecutor()
         self.llm_en_ligne = False
 
     async def prechauffer_cerveau(self):
@@ -90,21 +89,21 @@ class NexusAgenticSystem:
         prompt = f"""
         Tu es un agent de régulation d'urgence (Humain, empathique, très professionnel).
         DOMAINE IDENTIFIÉ : {domaine}
-        INFORMATION MANQUANTE : {friction}
+        L'algorithme de tri suspecte qu'il manque cette info : {friction}
         HISTORIQUE DU CLIENT : "{texte_utilisateur}"
 
-        RÈGLES STRICTES :
-        1. Pose UNE SEULE question courte en bon français pour obtenir l'information manquante.
-        2. NE SOIS PAS INTRUSIF (ex: Ne demande pas un code postal exact si la ville suffit, ne demande pas le nom de famille).
-        3. Ne te répète pas. Si le client a déjà donné l'info dans l'historique, adapte ta question.
-        4. Ne dis pas bonjour. Va droit au but mais garde un ton rassurant.
+        MISSION CRITIQUE :
+        1. Analyse l'historique de la conversation. Si le client A DÉJÀ FOURNI l'information manquante (ex: il a donné un numéro de rue, un code postal, ou décrit une situation claire), TU DOIS RÉPONDRE EXCLUSIVEMENT PAR LE MOT : "COMPLET". Ne dis rien d'autre.
+        2. Si et seulement si l'information est VRAIMENT absente ou trop floue, pose UNE SEULE question courte pour l'obtenir.
+        3. Ne te répète jamais. Ne dis pas bonjour. Va droit au but mais garde un ton rassurant.
+        4. NE SOIS PAS INTRUSIF (ex: Ne demande pas un code postal exact si la ville suffit, ne demande pas le nom de famille).
 
-        Réponds DIRECTEMENT par la question.
+        Réponds DIRECTEMENT par la question ou par "COMPLET".
         """
         try:
             reponse = await asyncio.wait_for(
                 self.client_llm.chat(model=MODEL_DIALOGUE, messages=[{'role': 'user', 'content': prompt}],
-                                     options={'temperature': 0.3}),
+                                     options={'temperature': 0.1}),
                 timeout=30.0
             )
             return reponse['message']['content'].strip().replace('"', '')
@@ -120,9 +119,14 @@ class NexusAgenticSystem:
         domaine, score, friction = self.evaluator.evaluer_ticket(ticket_historique)
 
         if str(friction).upper() == "COMPLET":
-            return domaine, score, friction, True, ""
+            return domaine, score, "COMPLET", True, ""
 
         question_bot = await self.generer_question_bot(ticket_historique, domaine, friction)
+
+        # Le filet de sécurité asynchrone : Mistral a le dernier mot pour forcer la complétion
+        if "COMPLET" in question_bot.upper():
+            return domaine, score, "COMPLET", True, ""
+
         return domaine, score, friction, False, question_bot
 
 
@@ -151,6 +155,7 @@ async def run_terminal():
                 print(f"   🤖 NEXUS ({domaine} | Score partiel: {score}/10) : {question_bot}")
                 complement = input("   💬 Client : ").strip()
 
+                # RESTAURATION DE TON OPTION DE SKIP SÉCURISÉE
                 if complement == "":
                     print("   ⚠️ [AVERTISSEMENT] Vous n'avez pas fourni de détails supplémentaires.")
                     print("   ⚠️ L'urgence de votre situation pourrait être sous-évaluée.")
@@ -171,6 +176,7 @@ async def run_terminal():
 
         if ticket_final == "exit": break
 
+        # Re-score final pour prendre en compte le dernier ajout
         if not ticket_complet:
             domaine, score, friction = nexus.evaluator.evaluer_ticket(ticket_final)
 
