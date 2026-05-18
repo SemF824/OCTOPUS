@@ -1,58 +1,57 @@
-# nexus_qualification.py
+# executives/nexus_qualification.py
 import joblib
 import os
-from nexus_config import MODEL_FRICTION_PATH
+from nexus_config import MODEL_UNIFIED_PATH
 
 
 class QualificationEngine:
     def __init__(self):
-        if not os.path.exists(MODEL_FRICTION_PATH):
-            self.friction_model = None
+        if os.path.exists(MODEL_UNIFIED_PATH):
+            self.model = joblib.load(MODEL_UNIFIED_PATH)
+            self.mode = "ML"
+            print(f"🔌 Modèle ML chargé : {MODEL_UNIFIED_PATH}")
         else:
-            self.friction_model = joblib.load(MODEL_FRICTION_PATH)
+            self.model = None
+            self.mode = "SIMULATION"
+            print("⚠️ Aucun modèle ML trouvé. Mode SIMULATION activé.")
 
-        # Lexiques pour la PERSONNALISATION DYNAMIQUE des messages
-        self.mots_anatomie = ["nez", "doigt", "ongle", "main", "bras", "jambe", "tête", "crâne", "poitrine", "coeur",
-                              "cœur", "ventre", "abdomen", "oeil", "yeux", "dos", "cou", "pied", "cheville"]
-        self.mots_materiel = ["pc", "ordinateur", "serveur", "vpn", "écran", "imprimante", "réseau", "wifi", "clavier",
-                              "souris", "câble", "routeur", "logiciel", "application"]
+    def calculer_score_logique(self, severite, impact, cible):
+        # Formule : ((Sévérité * 2) + Impact + Cible) / 2
+        return ((severite * 2) + impact + cible) / 2
 
-        # Templates dynamiques (Les {zone} et {equipement} seront remplacés par l'IA)
-        self.dictionnaire_questions = {
-            "DEMANDE_SYMPTOME_MED": "J'ai bien noté que cela concerne {zone}. Que ressentez-vous exactement (douleur, saignement, etc.) ?",
-            "DEMANDE_LIEU_CORPS": "Je comprends vos symptômes. À quel endroit précis du corps avez-vous mal ?",
-            "DEMANDE_ACTION_POLICE": "Mettez-vous à l'abri. Les suspects ou agresseurs sont-ils toujours sur place ?",
-            "DEMANDE_LIEU_POLICE": "Pour envoyer les forces de l'ordre, j'ai absolument besoin de l'adresse ou du lieu précis.",
-            "DEMANDE_ETAT_POMPIER": "SÉCURITÉ : Le bâtiment a-t-il été évacué ? Y a-t-il encore des personnes à l'intérieur ?",
-            "DEMANDE_LIEU_POMPIER": "Les pompiers ont besoin de votre localisation exacte pour intervenir. Où êtes-vous ?",
-            "DEMANDE_PANNE_TECH": "Je vois que le problème vient de {equipement}. Quel est le problème exact ou le message d'erreur ?",
-            "DEMANDE_MATERIEL_TECH": "Je comprends la panne, mais sur quel équipement ou logiciel cela se produit-il ?",
-            "DEMANDE_DETAILS_GENERAUX": "Votre message est très court. Pouvez-vous m'en dire un peu plus pour que je comprenne bien ?"
-        }
+    def evaluer_ticket(self, texte):
+        if self.mode == "ML":
+            prediction = self.model.predict([texte])[0]
 
-    def qualifier_ticket(self, texte, domaine_principal):
-        t = texte.lower()
+            # 🔄 COMPATIBILITÉ AVEC L'ANCIEN MODÈLE V21 (3 variables)
+            if len(prediction) == 3:
+                domaine = prediction[0]
+                impact = int(prediction[1])
+                urgence = int(prediction[2])  # Dans l'ancien modèle, c'était l'urgence
 
-        if self.friction_model is None:
-            return True, "Complet"
+                # On adapte l'ancienne "urgence" à la nouvelle "sévérité"
+                score = self.calculer_score_logique(severite=urgence, impact=impact, cible=0)
 
-        # 1. L'IA prédit le type d'information manquante
-        prediction_label = self.friction_model.predict([texte])[0]
+                # L'ancien modèle ne prédisait pas la friction. On la simule pour tester Llama.
+                if domaine in ["ACCÈS", "DIGITAL SUPPORT", "MATÉRIEL"]:
+                    friction = "MANQUE_IDENTIFIANT"
+                elif domaine == "MÉDICAL":
+                    friction = "MANQUE_SYMPTOMES"
+                else:
+                    friction = "MANQUE_LIEU"
 
-        if prediction_label == "COMPLET":
-            return True, "Complet"
+                return domaine, score, friction
 
-        # 2. Extraction dynamique pour PERSONNALISER le texte
-        # Cherche le mot exact utilisé par le client (ex: "nez", "pc")
-        zone_trouvee = next((mot for mot in self.mots_anatomie if mot in t), "cette zone")
-        equipement_trouve = next((mot for mot in self.mots_materiel if mot in t), "votre matériel")
+            # 🚀 POUR LE FUTUR NOUVEAU MODÈLE (5 variables)
+            else:
+                domaine = prediction[0]
+                score = self.calculer_score_logique(int(prediction[1]), int(prediction[2]), int(prediction[3]))
+                friction = prediction[4]
+                return domaine, score, friction
 
-        # Astuce linguistique : si le mot n'a pas de déterminant, on ajoute "votre"
-        if zone_trouvee != "cette zone": zone_trouvee = "votre " + zone_trouvee
-        if equipement_trouve != "votre matériel": equipement_trouve = "votre " + equipement_trouve
-
-        # 3. On récupère le template et on injecte les mots personnalisés
-        question_brute = self.dictionnaire_questions.get(prediction_label, "Pouvez-vous donner plus de détails ?")
-        question_personnalisee = question_brute.format(zone=zone_trouvee, equipement=equipement_trouve)
-
-        return False, question_personnalisee
+        else:
+            # MODE SIMULATION (Si pas de .pkl du tout)
+            domaine = "MÉDICAL" if "mal" in texte.lower() else "DIGITAL SUPPORT"
+            score = 2.5
+            friction = "MANQUE_LIEU"
+            return domaine, score, friction
