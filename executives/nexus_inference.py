@@ -1,98 +1,76 @@
 # nexus_inference.py
 import joblib
 import pandas as pd
-import sqlite3
 import os
 import numpy as np
-from nexus_core import TextEncoder  # Requis pour le chargement des modèles
-from nexus_config import DB_PATH, MODEL_PATH, MODEL_FRICTION_PATH
+import warnings
+
+warnings.filterwarnings("ignore")
+
+# Chemins adaptés à la sortie Kaggle (Place les fichiers dans le même dossier ou ajuste le chemin)
+CSV_PATH = "../nexus_dataset_v33_premium.csv"
+MODEL_PATH = "../pickle_result/nexus_v33_unified.pkl"
+AUDIT_DIR = "../audit"
 
 
 def run_full_audit():
     print("==================================================")
-    print("🚀 INITIALISATION DE L'AUDIT COMPLET NEXUS V12")
+    print("🚀 INITIALISATION DE L'AUDIT COMPLET NEXUS V33")
     print("==================================================")
 
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(MODEL_FRICTION_PATH):
-        print(f"❌ Les modèles sont introuvables. Vérifiez les chemins dans nexus_config.py.")
+    if not os.path.exists(MODEL_PATH):
+        print(f"❌ Modèle introuvable : {MODEL_PATH}")
         return
 
-    if not os.path.exists(DB_PATH):
-        print(f"❌ Base de données {DB_PATH} introuvable. Avez-vous importé les résultats de Kaggle ?")
+    if not os.path.exists(CSV_PATH):
+        print(f"❌ Dataset introuvable : {CSV_PATH}")
         return
 
-    print("\n🧠 Chargement des cerveaux V12...")
+    print("\n🧠 Chargement du cerveau unifié V33...")
     model_unified = joblib.load(MODEL_PATH)
-    model_friction = joblib.load(MODEL_FRICTION_PATH)
 
-    print(f"📊 Connexion à la base de données de test ({DB_PATH})...")
-    conn = sqlite3.connect(DB_PATH)
+    print(f"📊 Chargement des données de test ({CSV_PATH})...")
+    df = pd.read_csv(CSV_PATH)
+    df = df.dropna(subset=['texte', 'domaine', 'severite', 'impact', 'cible', 'friction'])
 
-    # ==========================================
-    # AUDIT 1 : DOMAINE ET NOTATION (Impact/Urgence)
-    # ==========================================
-    print("\n🔎 --- AUDIT DU CERVEAU PRINCIPAL (Domaine & Notation) ---")
-    # On prélève 10 000 tickets au hasard pour le test
-    df_dom = pd.read_sql("SELECT * FROM tickets_domaines ORDER BY RANDOM() LIMIT 10000", conn)
+    # On audite un échantillon robuste
+    df_audit = df.sample(n=min(2500, len(df)), random_state=42).copy()
 
-    if df_dom.empty:
-        print("⚠️ Aucun ticket trouvé dans 'tickets_domaines'.")
-    else:
-        # Données réelles
-        y_true_multi = df_dom[['domaine', 'impact', 'urgence']].values
+    print(f"\n⚙️ Évaluation de {len(df_audit)} interactions (Multi-Cibles)...")
 
-        # Prédictions de l'IA
-        print(f"⚙️ Évaluation de {len(df_dom)} tickets...")
-        y_pred_multi = model_unified.predict(df_dom['texte'])
+    # Prédiction unifiée (le modèle renvoie un array 2D avec les 5 prédictions d'un coup)
+    X = df_audit['texte'].astype(str)
+    y_true = df_audit[['domaine', 'severite', 'impact', 'cible', 'friction']].astype(str).values
+    y_pred = model_unified.predict(X)
 
-        # Calcul des précisions
-        acc_domaine = np.mean(y_true_multi[:, 0] == y_pred_multi[:, 0]) * 100
-        # On convertit en string au cas où il y ait des mélanges int/str
-        acc_impact = np.mean(y_true_multi[:, 1].astype(str) == y_pred_multi[:, 1].astype(str)) * 100
-        acc_urgence = np.mean(y_true_multi[:, 2].astype(str) == y_pred_multi[:, 2].astype(str)) * 100
+    colonnes = ['domaine', 'severite', 'impact', 'cible', 'friction']
+    erreurs_indices = set()
 
-        print(f"🎯 Précision DOMAINE : {acc_domaine:.2f} %")
-        print(f"💥 Précision IMPACT  : {acc_impact:.2f} %")
-        print(f"⏱️ Précision URGENCE : {acc_urgence:.2f} %")
+    for i, col in enumerate(colonnes):
+        acc = np.mean(y_true[:, i] == y_pred[:, i]) * 100
+        print(f"🎯 Précision {col.upper():<10} : {acc:.2f} %")
 
-        # Sauvegarde des erreurs pour analyse humaine
-        df_dom['pred_domaine'] = y_pred_multi[:, 0]
-        df_dom['pred_impact'] = y_pred_multi[:, 1]
-        df_dom['pred_urgence'] = y_pred_multi[:, 2]
+        # Identifier les lignes avec des erreurs pour cette colonne
+        err_mask = y_true[:, i] != y_pred[:, i]
+        for idx in np.where(err_mask)[0]:
+            erreurs_indices.add(idx)
 
-        erreurs_dom = df_dom[
-            (df_dom['domaine'] != df_dom['pred_domaine']) |
-            (df_dom['impact'].astype(str) != df_dom['pred_impact'].astype(str)) |
-            (df_dom['urgence'].astype(str) != df_dom['pred_urgence'].astype(str))
-            ]
+    # Extraction chirurgicale des erreurs pour analyse
+    erreurs_list = list(erreurs_indices)
+    df_erreurs = df_audit.iloc[erreurs_list].copy()
 
-        os.makedirs('../audit', exist_ok=True)
-        erreurs_dom.to_csv('../audit/audit_erreurs_notation_v12.csv', index=False)
-        print(f"💾 {len(erreurs_dom)} erreurs de tri/notation sauvegardées dans audit_erreurs_notation_v12.csv")
+    # Ajout des colonnes de prédiction pour comparer avec la vérité
+    for i, col in enumerate(colonnes):
+        df_erreurs[f'pred_{col}'] = y_pred[erreurs_list, i]
 
-    # ==========================================
-    # AUDIT 2 : EMPATHIE ET COMPORTEMENT (Friction)
-    # ==========================================
-    print("\n🗣️ --- AUDIT DU CERVEAU EMPATHIQUE (Façon de parler) ---")
-    df_fric = pd.read_sql("SELECT * FROM tickets_friction ORDER BY RANDOM() LIMIT 10000", conn)
+    os.makedirs(AUDIT_DIR, exist_ok=True)
+    audit_file = os.path.join(AUDIT_DIR, 'audit_erreurs_v33.csv')
+    df_erreurs.to_csv(audit_file, index=False)
 
-    if df_fric.empty:
-        print("⚠️ Aucun ticket trouvé dans 'tickets_friction'.")
-    else:
-        y_true_fric = df_fric['label'].values
-
-        print(f"⚙️ Évaluation de {len(df_fric)} interactions...")
-        y_pred_fric = model_friction.predict(df_fric['texte'])
-
-        acc_fric = np.mean(y_true_fric == y_pred_fric) * 100
-        print(f"💬 Précision CHOIX DE LA QUESTION (Empathie) : {acc_fric:.2f} %")
-
-        df_fric['pred_label'] = y_pred_fric
-        erreurs_fric = df_fric[df_fric['label'] != df_fric['pred_label']]
-        erreurs_fric.to_csv('../audit/audit_erreurs_questions_v12.csv', index=False)
-        print(f"💾 {len(erreurs_fric)} erreurs de dialogue sauvegardées dans audit_erreurs_questions_v12.csv")
-
-    print("\n✅ AUDIT TERMINÉ.")
+    print(f"\n💾 {len(df_erreurs)} tickets présentant au moins UNE erreur ont été isolés.")
+    print(f"👉 Fichier généré : {audit_file}")
+    print(
+        "💡 Analyse ce fichier. Si le modèle confond souvent 'POLICE' et 'SERVICES URBAINS', tu sauras où réentraîner.")
 
 
 if __name__ == "__main__":
