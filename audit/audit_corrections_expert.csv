@@ -1,0 +1,21 @@
+texte,domaine,severite,impact,cible,friction
+"Il n'y a pas d'arme, c'est juste une dispute verbale",POLICE,2,1,0,COMPLET
+"Ce n'est pas urgent, je veux juste un renseignement",NON_URGENT,1,1,0,COMPLET
+Je regarde un film où une bombe explose au centre commercial,NON_URGENT,1,1,0,COMPLET
+"Dans mon jeu vidéo, le mec s'est pris une balle",NON_URGENT,1,1,0,COMPLET
+"Ma pizza est froide, c'est un scandale absolu !",NON_URGENT,1,1,0,COMPLET
+Un camion citerne d'essence a percuté le commissariat et prend feu,POMPIER,4,3,2,MANQUE_LIEU
+Le serveur principal a pris feu à cause d'un court-circuit,CYBERSÉCURITÉ,4,2,2,MANQUE_LIEU
+"Attaque ransomware massive, on perd toutes les données bancaires",CYBERSÉCURITÉ,4,4,2,MANQUE_LIEU
+Le bébé est tout bleu et ne respire plus du tout,MÉDICAL,4,1,0,MANQUE_LIEU
+Un homme cagoulé tire sur la foule,POLICE,4,4,0,MANQUE_LIEU
+Ça saigne beaucoup.,MÉDICAL,3,1,0,MANQUE_LIEU
+On a piraté,CYBERSÉCURITÉ,3,2,0,MANQUE_CONTEXTE
+Mon ordinateur.,DIGITAL SUPPORT,2,1,0,MANQUE_SYMPTOMES
+Au feu !,POMPIER,4,2,0,MANQUE_LIEU
+Vite police !,POLICE,4,1,0,MANQUE_LIEU
+Aled,MÉDICAL,4,1,0,MANQUE_CONTEXTE
+Accident grave,TRANSPORT & MOBILITÉ,4,2,0,MANQUE_LIEU
+Chien sauvage à proximité,ANIMALIER,3,2,2,MANQUE_IDENTIFIANT
+Chien sauvage à proximité,ANIMALIER,3,2,2,MANQUE_LIEU
+Route cassée ! Panique !,SERVICES URBAINS,4,1,0,MANQUE_LIEU
