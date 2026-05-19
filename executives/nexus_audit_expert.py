@@ -1,79 +1,60 @@
-# nexus_audit_expert.py
+# executives/nexus_audit_expert.py
 import joblib
 import os
 import warnings
-import pandas as pd
-from nexus_core import TextEncoder
-from nexus_config import MODEL_PATH, MODEL_FRICTION_PATH
+from nexus_config import MODEL_UNIFIED_PATH
 
 warnings.filterwarnings("ignore")
 
 
 def run_expert_audit():
     print("==================================================")
-    print("🔬 AUDIT EXPERT NEXUS V12 (TESTS DE RUPTURE)")
+    print("🔬 AUDIT EXPERT NEXUS V33 (TESTS DE RUPTURE)")
     print("==================================================\n")
 
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(MODEL_FRICTION_PATH):
-        print("❌ Modèles introuvables. Vérifiez les chemins.")
+    if not os.path.exists(MODEL_UNIFIED_PATH):
+        print(f"❌ Modèle introuvable: {MODEL_UNIFIED_PATH}")
         return
 
-    print("🧠 Chargement des cerveaux...")
-    model_unified = joblib.load(MODEL_PATH)
-    model_friction = joblib.load(MODEL_FRICTION_PATH)
+    print("🧠 Chargement du cerveau unifié V33...")
+    model_unified = joblib.load(MODEL_UNIFIED_PATH)
 
-    # ==========================================
-    # BATTERIE DE TESTS INÉDITS (Pièges absolus)
-    # ==========================================
     stress_tests = [
         # 1. PIÈGE DE LA NÉGATION
-        ("Il n'y a pas d'arme, c'est juste une dispute verbale", "POLICE (Faible)"),
-        ("Ce n'est pas urgent, je veux juste un renseignement", "Bas/Neutralisé"),
-
+        "Il n'y a pas d'arme, c'est juste une dispute verbale",
+        "Ce n'est pas urgent, je veux juste un renseignement",
         # 2. PIÈGE DE LA FICTION
-        ("Je regarde un film où une bombe explose au centre commercial", "Neutralisé/Bas"),
-        ("Dans mon jeu vidéo, le mec s'est pris une balle", "Neutralisé/Bas"),
-
+        "Je regarde un film où une bombe explose au centre commercial",
+        "Dans mon jeu vidéo, le mec s'est pris une balle",
         # 3. AMBIGUÏTÉ / SYNERGIES
-        ("Un camion d'essence a percuté le commissariat et prend feu", "POMPIER + POLICE"),
-        ("Le serveur principal a pris feu à cause d'un court-circuit", "INFRA + POMPIER"),
-
-        # 4. FRICTION (Manque d'infos - doit déclencher une question)
-        ("Ça saigne beaucoup.", "Doit poser question"),
-        ("On a piraté", "Doit poser question"),
-        ("Mon ordinateur.", "Doit poser question"),
-
-        # 5. CAS EXTRÊMES (Impact 4 / Urgence 4)
-        ("Le bébé est tout bleu et ne respire plus du tout", "MÉDICAL 4/4"),
-        ("Attaque ransomware massive, on perd toutes les données bancaires", "INFRA 4/4"),
-        ("Un homme cagoulé tire sur la foule", "POLICE 4/4")
+        "Un camion d'essence a percuté le commissariat et prend feu",
+        "Le serveur principal a pris feu à cause d'un court-circuit",
+        # 4. TICKETS ULTRA-COURTS (Crash-Test TF-IDF)
+        "Ça saigne beaucoup.",
+        "On a piraté",
+        "Mon ordinateur.",
+        # 5. CAS EXTRÊMES
+        "Le bébé est tout bleu et ne respire plus du tout",
+        "Attaque ransomware massive, on perd toutes les données bancaires",
+        "Un homme cagoulé tire sur la foule"
     ]
 
-    print(f"\n{'TICKET SOUMIS (Inédit)':<60} | {'DOM.'} | {'I/U'} | {'STATUT FRICTION'}")
-    print("-" * 105)
+    print(f"\n{'TICKET SOUMIS':<60} | {'DOMAINE':<20} | {'SEV/IMP/CIB'} | {'FRICTION'}")
+    print("-" * 125)
 
-    for texte, attente in stress_tests:
-        # 1. Test du modèle Friction (Phrase complète ou non ?)
-        pred_fric = model_friction.predict([texte])[0]
-
-        # 2. Test du modèle Principal (Domaine, Impact, Urgence)
+    for texte in stress_tests:
         pred_uni = model_unified.predict([texte])[0]
-        dom, imp, urg = pred_uni[0], pred_uni[1], pred_uni[2]
+        # Décodage strict V33
+        dom, sev, imp, cib, fric = pred_uni[0], pred_uni[1], pred_uni[2], pred_uni[3], pred_uni[4]
 
-        # Formatage visuel du statut de Friction
-        if pred_fric == "COMPLET":
-            statut_fric = "🟢 TICKET COMPLET"
-        else:
-            statut_fric = f"🟡 QUESTION REQUISE"
-
-        # Raccourcir le texte pour l'affichage
         texte_court = (texte[:57] + '...') if len(texte) > 57 else texte
 
-        print(f"{texte_court:<60} | {dom[:4]:<4} | {imp}/{urg} | {statut_fric}")
+        if fric == "COMPLET":
+            fric_display = "🟢 COMPLET"
+        else:
+            fric_display = f"🟡 {fric}"
 
-    print("-" * 105)
-    print("✅ Audit terminé. Observez comment l'IA réagit aux pièges ci-dessus.")
-    print("👉 Note : Si un ticket court est marqué 'TICKET COMPLET', le modèle Friction manque de données courtes.")
+        print(f"{texte_court:<60} | {dom:<20} | {sev}/{imp}/{cib}       | {fric_display}")
 
 
 if __name__ == "__main__":
